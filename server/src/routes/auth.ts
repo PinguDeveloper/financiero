@@ -1,3 +1,4 @@
+import type { Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
@@ -15,14 +16,14 @@ function authCookieOptions() {
   const isProd = process.env.NODE_ENV === "production";
   return {
     httpOnly: true as const,
-    sameSite: (isProd ? "none" : "lax") as const,
+    sameSite: isProd ? ("none" as const) : ("lax" as const),
     secure: isProd,
     maxAge: 14 * 24 * 60 * 60 * 1000,
     path: "/",
   };
 }
 
-router.post("/register", async (req, res) => {
+router.post("/register", async (req: Request, res: Response) => {
   const parsed = credentialsSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "E-mail ou senha inválidos" });
@@ -41,7 +42,7 @@ router.post("/register", async (req, res) => {
   res.status(201).json({ user: { id: user.id, email: user.email } });
 });
 
-router.post("/login", async (req, res) => {
+router.post("/login", async (req: Request, res: Response) => {
   const parsed = credentialsSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "E-mail ou senha inválidos" });
@@ -63,12 +64,12 @@ router.post("/login", async (req, res) => {
   res.json({ user: { id: user.id, email: user.email } });
 });
 
-router.post("/logout", (_req, res) => {
+router.post("/logout", (_req: Request, res: Response) => {
   res.clearCookie("token", { path: "/" });
   res.json({ ok: true });
 });
 
-router.get("/me", async (req, res) => {
+router.get("/me", async (req: Request, res: Response) => {
   const token =
     (req.cookies as Record<string, string | undefined> | undefined)?.token ??
     (req.headers.authorization?.startsWith("Bearer ")

@@ -1,3 +1,4 @@
+import type { Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
@@ -95,7 +96,7 @@ async function serializeState(userId: string) {
   };
 }
 
-router.get("/state", async (req, res) => {
+router.get("/state", async (req: Request, res: Response) => {
   const userId = req.userId!;
   const state = await serializeState(userId);
   res.json(state);
@@ -109,7 +110,7 @@ const transactionSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-router.post("/transactions", async (req, res) => {
+router.post("/transactions", async (req: Request, res: Response) => {
   const parsed = transactionSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Dados inválidos" });
@@ -130,7 +131,7 @@ router.post("/transactions", async (req, res) => {
   res.status(201).json(await serializeState(userId));
 });
 
-router.delete("/transactions/:id", async (req, res) => {
+router.delete("/transactions/:id", async (req: Request, res: Response) => {
   const userId = req.userId!;
   const id = req.params.id;
   const row = await prisma.transaction.findFirst({ where: { id, userId } });
@@ -150,7 +151,7 @@ const planSchema = z.object({
   firstDueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-router.post("/installment-plans", async (req, res) => {
+router.post("/installment-plans", async (req: Request, res: Response) => {
   const parsed = planSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Dados inválidos" });
@@ -170,7 +171,7 @@ router.post("/installment-plans", async (req, res) => {
   res.status(201).json(await serializeState(userId));
 });
 
-router.delete("/installment-plans/:id", async (req, res) => {
+router.delete("/installment-plans/:id", async (req: Request, res: Response) => {
   const userId = req.userId!;
   const id = req.params.id;
   const plan = await prisma.installmentPlan.findFirst({ where: { id, userId } });
@@ -187,7 +188,7 @@ const paySchema = z.object({
   paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-router.post("/installment-plans/:id/payments", async (req, res) => {
+router.post("/installment-plans/:id/payments", async (req: Request, res: Response) => {
   const userId = req.userId!;
   const planId = req.params.id;
   const parsed = paySchema.safeParse(req.body);
@@ -241,7 +242,7 @@ const investmentSchema = z.object({
   otherCosts: z.number().nonnegative().finite().optional().default(0),
 });
 
-router.post("/investments", async (req, res) => {
+router.post("/investments", async (req: Request, res: Response) => {
   const parsed = investmentSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Dados inválidos" });
@@ -283,7 +284,7 @@ router.post("/investments", async (req, res) => {
   }
 });
 
-router.delete("/investments/:id", async (req, res) => {
+router.delete("/investments/:id", async (req: Request, res: Response) => {
   const userId = req.userId!;
   const id = req.params.id;
   const row = await prisma.investmentEntry.findFirst({ where: { id, userId } });
@@ -295,7 +296,7 @@ router.delete("/investments/:id", async (req, res) => {
   res.json(await serializeState(userId));
 });
 
-router.get("/market/quote", async (req, res) => {
+router.get("/market/quote", async (req: Request, res: Response) => {
   const raw = typeof req.query.ticker === "string" ? req.query.ticker : "";
   const ticker = raw.trim().toUpperCase().replace(/\s+/g, "");
   if (!ticker || ticker.length > 12 || !/^[A-Z0-9]+$/.test(ticker)) {
