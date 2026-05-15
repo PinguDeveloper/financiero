@@ -2,6 +2,26 @@ import type { PersistedState } from "../types";
 
 const base = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "";
 
+/** JWT em memória de aba: cookies cross-site (Vercel→API) costumam não ir; o servidor aceita Bearer. */
+const ACCESS_TOKEN_KEY = "fin_ctrl_access_token";
+
+function getStoredAccessToken(): string | null {
+  try {
+    return sessionStorage.getItem(ACCESS_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredAccessToken(token: string | null): void {
+  try {
+    if (token) sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
+    else sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 async function parseError(res: Response): Promise<string> {
   try {
     const j = (await res.json()) as { error?: string };
@@ -14,15 +34,21 @@ async function parseError(res: Response): Promise<string> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body != null && init.body !== "";
+  const bearer = getStoredAccessToken();
   const r = await fetch(`${base}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
-  if (!r.ok) throw new Error(await parseError(r));
+  if (!r.ok) {
+    const msg = await parseError(r);
+    if (r.status === 401 && bearer) setStoredAccessToken(null);
+    throw new Error(msg);
+  }
   return (await r.json()) as T;
 }
 
@@ -33,24 +59,32 @@ export async function authMe(): Promise<{ user: AuthUser | null }> {
 }
 
 export async function authLogin(email: string, password: string): Promise<{ user: AuthUser }> {
-  return request("/auth/login", {
+  const r = await request<{ user: AuthUser; accessToken: string }>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+  setStoredAccessToken(r.accessToken);
+  return { user: r.user };
 }
 
 export async function authRegister(
   email: string,
   password: string
 ): Promise<{ user: AuthUser }> {
-  return request("/auth/register", {
+  const r = await request<{ user: AuthUser; accessToken: string }>("/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+  setStoredAccessToken(r.accessToken);
+  return { user: r.user };
 }
 
 export async function authLogout(): Promise<void> {
-  await request<{ ok: boolean }>("/auth/logout", { method: "POST" });
+  try {
+    await request<{ ok: boolean }>("/auth/logout", { method: "POST" });
+  } finally {
+    setStoredAccessToken(null);
+  }
 }
 
 export async function fetchState(): Promise<PersistedState> {

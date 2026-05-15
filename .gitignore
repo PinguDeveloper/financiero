@@ -6,4 +6,6 @@ dist
 server/.env
 server/prisma/*.db
 server/prisma/*.db-journal
+server/prisma/**/*.db
+server/prisma/**/*.db-journal
 client/dist
