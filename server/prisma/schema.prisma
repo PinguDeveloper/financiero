@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String              @id @default(uuid())
+  email              String              @unique
+  passwordHash       String
+  createdAt          DateTime            @default(now())
+  transactions       Transaction[]
+  installmentPlans   InstallmentPlan[]
+  investmentEntries  InvestmentEntry[]
+}
+
+model Transaction {
+  id                  String           @id @default(uuid())
+  userId              String
+  type                String
+  amount              Decimal
+  description         String
+  category            String
+  date                DateTime
+  createdAt           DateTime         @default(now())
+  installmentPlanId String?
+  installmentNumber Int?
+  installmentOf     Int?
+
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installmentPlan InstallmentPlan?  @relation(fields: [installmentPlanId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, date])
+}
+
+model InstallmentPlan {
+  id                 String          @id @default(uuid())
+  userId             String
+  description        String
+  category           String
+  totalInstallments  Int
+  installmentAmount  Decimal
+  firstDueDate       DateTime
+  createdAt          DateTime        @default(now())
+
+  user                User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  linkedTransactions  Transaction[]
+
+  @@index([userId])
+}
+
+model InvestmentEntry {
+  id         String   @id @default(uuid())
+  userId     String
+  kind       String
+  amount     Decimal
+  date       DateTime
+  assetName  String
+  notes      String
+  createdAt  DateTime @default(now())
+  assetType  String   @default("Ações")
+  quantity   Decimal?
+  unitPrice  Decimal?
+  otherCosts Decimal  @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

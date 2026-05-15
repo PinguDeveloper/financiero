@@ -1,0 +1,25 @@
+{
+  "name": "controle-financeiro",
+  "private": true,
+  "version": "2.0.0",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev:full",
+    "dev:full": "concurrently -k -n api,web -c magenta,cyan \"npm run dev -w server\" \"wait-on http://127.0.0.1:4000/health && npm run dev -w client\"",
+    "dev:parallel": "concurrently -n web,api -c cyan,magenta \"npm run dev -w client\" \"npm run dev -w server\"",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "npm run start -w server",
+    "db:push": "npm run db:push -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:migrate:dev": "npm run db:migrate:dev -w server",
+    "db:studio": "npm run db:studio -w server",
+    "docker:db": "docker compose up -d db"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "wait-on": "^8.0.5"
+  }
+}

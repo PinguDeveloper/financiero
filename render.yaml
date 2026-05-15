@@ -1,0 +1,11 @@
+# Blueprint Render — ajuste o nome do serviço se quiser.
+# No painel: conecte o repositório, confira "Root Directory" = server (ou use este arquivo).
+version: "1"
+services:
+  - type: web
+    name: controle-financeiro-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install && npx prisma generate && npm run db:migrate && npm run build
+    startCommand: npm start
+    healthCheckPath: /health

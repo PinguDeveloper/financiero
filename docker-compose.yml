@@ -1,0 +1,22 @@
+# PostgreSQL local para desenvolvimento (dados persistentes no volume `pgdata`).
+# Uso: `docker compose up -d` na raiz do repositório, depois `npm run db:migrate` (ou `db:migrate:dev`).
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: finance
+      POSTGRES_PASSWORD: finance
+      POSTGRES_DB: controle_financeiro
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finance -d controle_financeiro"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+
+volumes:
+  pgdata:
