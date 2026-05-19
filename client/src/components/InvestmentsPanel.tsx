@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Bar,
   BarChart,
@@ -130,6 +131,10 @@ interface Props {
   };
   onAdd: (input: Omit<InvestmentEntry, "id" | "createdAt">) => void | Promise<void>;
   onRemove: (id: string) => void | Promise<void>;
+  onSyncProventos?: () => Promise<{
+    upcoming: { ticker: string; paymentDate: string; amountPerShare: number; label: string }[];
+    created: number;
+  }>;
 }
 
 interface CategoryBucket {
@@ -145,11 +150,14 @@ interface CategoryBucket {
   sharePct: number | null;
 }
 
-export function InvestmentsPanel({ entries, summary, onAdd, onRemove }: Props) {
+export function InvestmentsPanel({ entries, summary, onAdd, onRemove, onSyncProventos }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
   const [quotes, setQuotes] = useState<Record<string, api.MarketQuote>>({});
   const [quotesLoading, setQuotesLoading] = useState(false);
   const [quotesErr, setQuotesErr] = useState<string | null>(null);
+  const [upcomingDivs, setUpcomingDivs] = useState<
+    { ticker: string; paymentDate: string; amountPerShare: number; label: string }[]
+  >([]);
   const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
 
   const positions = useMemo(() => buildInvestmentPositions(entries), [entries]);
@@ -260,27 +268,53 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove }: Props) {
     return m;
   }, [quotes]);
 
+  const openTickers = useMemo(
+    () => positions.filter((p) => p.qty > 0).map((p) => p.assetName),
+    [positions]
+  );
+  const tickersKey = openTickers.join(",");
+
   const loadQuotes = useCallback(async () => {
-    const open = positions.filter((p) => p.qty > 0);
-    if (open.length === 0) {
-      setQuotesErr("Não há posições abertas com quantidade para consultar cotação.");
+    if (openTickers.length === 0) {
+      setQuotesErr(null);
       return;
     }
     setQuotesLoading(true);
     setQuotesErr(null);
-    const slice = open.slice(0, 14);
-    const fetched: Record<string, api.MarketQuote> = {};
-    for (const p of slice) {
-      try {
-        fetched[p.assetName] = await api.fetchMarketQuote(p.assetName);
-      } catch {
-        /* ignora */
+    try {
+      const { quotes: fetched, failed } = await api.fetchMarketQuotes(openTickers.slice(0, 24));
+      setQuotes((prev) => ({ ...prev, ...fetched }));
+      if (Object.keys(fetched).length === 0) {
+        setQuotesErr("Não foi possível obter cotações agora.");
+      } else if (failed.length > 0) {
+        setQuotesErr(`${failed.length} ativo(s) sem cotação no momento.`);
       }
+    } catch {
+      setQuotesErr("Não foi possível obter cotações agora.");
+    } finally {
+      setQuotesLoading(false);
     }
-    setQuotes((prev) => ({ ...prev, ...fetched }));
-    setQuotesLoading(false);
-    if (Object.keys(fetched).length === 0) setQuotesErr("Não foi possível obter cotações agora.");
-  }, [positions]);
+  }, [openTickers]);
+
+  const autoQuotedRef = useRef("");
+  useEffect(() => {
+    if (openTickers.length === 0) return;
+    if (autoQuotedRef.current === tickersKey) return;
+    autoQuotedRef.current = tickersKey;
+    void loadQuotes();
+  }, [tickersKey, openTickers.length, loadQuotes]);
+
+  useEffect(() => {
+    if (!onSyncProventos) return;
+    void (async () => {
+      try {
+        const r = await onSyncProventos();
+        setUpcomingDivs(r.upcoming);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [onSyncProventos, tickersKey]);
 
   const toggleType = (type: string) => {
     setExpandedTypes((prev) => ({ ...prev, [type]: !prev[type] }));
@@ -295,8 +329,7 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove }: Props) {
         <div className="max-w-2xl space-y-2">
           <h2 className="font-display text-2xl font-bold tracking-tight text-white">Investimentos</h2>
           <p className="text-sm leading-relaxed text-slate-400">
-            Compras, vendas, proventos e ajustes. Cotação e P&amp;L estimado na seção de posições — use
-            &quot;Atualizar cotações&quot; para buscar preços de mercado.
+            Compras, vendas, proventos e ajustes. Cotações atualizadas automaticamente ao abrir esta aba.
           </p>
         </div>
         <button
@@ -321,20 +354,25 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove }: Props) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Visão geral</p>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="hidden rounded-lg border border-dashed border-surface-border px-3 py-2 text-xs text-slate-500 sm:inline">
-            Filtros avançados em breve
-          </span>
-          <button
-            type="button"
-            onClick={() => void loadQuotes()}
-            disabled={quotesLoading}
-            className="rounded-xl border border-surface-border bg-surface px-4 py-2.5 text-sm font-medium text-white transition hover:border-accent/50 hover:bg-surface-raised disabled:opacity-50"
-          >
-            {quotesLoading ? "Consultando…" : "Atualizar cotações"}
-          </button>
+          {quotesLoading ? (
+            <span className="text-xs text-slate-400">Atualizando cotações…</span>
+          ) : null}
         </div>
       </div>
       {quotesErr ? <p className="text-sm text-amber-300/90">{quotesErr}</p> : null}
+      {upcomingDivs.length > 0 ? (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-slate-300">
+          <p className="font-medium text-emerald-300">Próximos proventos (estimativa brapi)</p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {upcomingDivs.slice(0, 6).map((d) => (
+              <li key={`${d.ticker}-${d.paymentDate}`}>
+                {d.ticker} — {d.label}: {formatBRL(d.amountPerShare)}/cota em{" "}
+                {formatISODateToBR(d.paymentDate)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* KPIs — estilo cards do referencial */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -592,6 +630,7 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove }: Props) {
                             <th className="py-2 pr-4 font-medium">Ativo</th>
                             <th className="py-2 pr-4 text-right font-medium">Qtd</th>
                             <th className="py-2 pr-4 text-right font-medium">Preço médio</th>
+                            <th className="py-2 pr-4 text-right font-medium">Preço atual</th>
                             <th className="py-2 pr-4 text-right font-medium">% na carteira</th>
                             <th className="py-2 pr-4 text-right font-medium">Saldo total</th>
                             <th className="py-2 font-medium">Setor</th>
@@ -618,6 +657,9 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove }: Props) {
                                 </td>
                                 <td className="py-3 pr-4 text-right tabular-nums text-slate-300">
                                   {p.avgPrice != null ? formatBRL(p.avgPrice) : "—"}
+                                </td>
+                                <td className="py-3 pr-4 text-right tabular-nums text-accent">
+                                  {q?.price != null ? formatBRL(q.price) : "—"}
                                 </td>
                                 <td className="py-3 pr-4 text-right tabular-nums text-slate-300">
                                   {walletPct != null ? `${walletPct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : "—"}
@@ -662,6 +704,12 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove }: Props) {
                                 <dt>Preço médio</dt>
                                 <dd className="tabular-nums text-slate-200">
                                   {p.avgPrice != null ? formatBRL(p.avgPrice) : "—"}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>Preço atual</dt>
+                                <dd className="tabular-nums text-accent">
+                                  {q?.price != null ? formatBRL(q.price) : "—"}
                                 </dd>
                               </div>
                               <div>

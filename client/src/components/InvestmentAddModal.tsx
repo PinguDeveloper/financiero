@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import type { InvestmentEntry, InvestmentKind } from "../types";
 import { formatBRL } from "../lib/format";
 import * as api from "../lib/api";
@@ -202,12 +203,9 @@ export function InvestmentAddModal({
     return partes.join(" + ");
   }, [qtyStr, unitStr, otherStr]);
 
-  async function fillQuote() {
-    const t = assetName.trim().toUpperCase();
-    if (!t) {
-      setErr("Informe o ticker do ativo acima para buscar a cotação.");
-      return;
-    }
+  const fillQuote = useCallback(async (tickerRaw: string) => {
+    const t = tickerRaw.trim().toUpperCase();
+    if (!t || t.length < 4 || assetType === "Outros") return;
     setQuoteLoading(true);
     setErr(null);
     try {
@@ -216,12 +214,20 @@ export function InvestmentAddModal({
       setUnitStr(q.price.toFixed(2).replace(".", ","));
       setLogoCache((prev) => ({ ...prev, [q.ticker]: q.logoUrl ?? null }));
       logoAttempted.current.add(q.ticker);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Não foi possível obter a cotação.");
+    } catch {
+      /* cotação opcional */
     } finally {
       setQuoteLoading(false);
     }
-  }
+  }, [assetType]);
+
+  useEffect(() => {
+    if (!open || flow !== FLOW_NEGOCIO) return;
+    const t = assetName.trim().toUpperCase();
+    if (t.length < 4) return;
+    const timer = window.setTimeout(() => void fillQuote(t), 600);
+    return () => window.clearTimeout(timer);
+  }, [open, flow, assetName, fillQuote]);
 
   function pickTicker(t: string) {
     setAssetName(assetType === "Outros" ? t : t.toUpperCase());
@@ -470,25 +476,19 @@ export function InvestmentAddModal({
                 </div>
                 <div className="sm:col-span-2">
                   <label className={label}>Preço em R$ (por cota)</label>
-                  <div className="mt-1.5 flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                  <div className="mt-1.5">
                     <input
                       inputMode="decimal"
                       value={unitStr}
                       onChange={(e) => setUnitStr(e.target.value)}
                       placeholder="8,27"
-                      className={`${field} min-w-0 flex-1`}
+                      className={field}
                     />
-                    <button
-                      type="button"
-                      onClick={() => void fillQuote()}
-                      disabled={quoteLoading}
-                      className="shrink-0 rounded-lg border border-zinc-300 bg-zinc-50 px-4 py-2.5 text-sm font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-50 sm:self-auto"
-                    >
-                      {quoteLoading ? "Buscando…" : "Buscar cotação"}
-                    </button>
                   </div>
                   <p className="mt-1 text-xs text-zinc-400">
-                    Usa o ticker informado acima. O valor é referência — confira na corretora.
+                    {quoteLoading
+                      ? "Buscando cotação automaticamente…"
+                      : "Preço preenchido automaticamente pelo ticker (confira na corretora)."}
                   </p>
                 </div>
                 <div className="sm:col-span-2">

@@ -1,4 +1,8 @@
 import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { SavingsBoxesPanel } from "./components/SavingsBoxesPanel";
+import { PlannedExpensesPanel } from "./components/PlannedExpensesPanel";
+import { MotionSection } from "./lib/motion";
 import { AddTransactionForm } from "./components/AddTransactionForm";
 import { ChartsSection, IncomeByCategoryMini } from "./components/ChartsSection";
 import { DashboardExtendedCharts } from "./components/DashboardExtendedCharts";
@@ -68,6 +72,14 @@ function FinanceShell() {
     investmentSummary,
     addInvestment,
     removeInvestment,
+    syncProventos,
+    savingsBoxes,
+    plannedExpenses,
+    addSavingsBox,
+    removeSavingsBox,
+    addPlannedExpense,
+    togglePlannedExpense,
+    removePlannedExpense,
     loading,
     error,
   } = useFinance();
@@ -174,7 +186,15 @@ function FinanceShell() {
         {loading ? (
           <PageSkeleton />
         ) : (
-          <div key={tab} className="animate-fade-in flex flex-col gap-12 lg:gap-14">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={tab}
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.25 }}
+              className="flex flex-col gap-12 lg:gap-14"
+            >
             {tab === "dashboard" && (
               <>
                 <section className="space-y-5">
@@ -212,6 +232,23 @@ function FinanceShell() {
                   effectiveMonth={effectiveMonth}
                   monthSummary={monthSummary}
                 />
+
+                <MotionSection delay={0.05}>
+                  <SavingsBoxesPanel
+                    boxes={savingsBoxes}
+                    onAdd={addSavingsBox}
+                    onRemove={removeSavingsBox}
+                  />
+                </MotionSection>
+
+                <MotionSection delay={0.08}>
+                  <PlannedExpensesPanel
+                    expenses={plannedExpenses}
+                    onAdd={addPlannedExpense}
+                    onToggle={togglePlannedExpense}
+                    onRemove={removePlannedExpense}
+                  />
+                </MotionSection>
 
                 <AddTransactionForm categories={categories} onAdd={addTransaction} />
 
@@ -254,9 +291,11 @@ function FinanceShell() {
                 summary={investmentSummary}
                 onAdd={addInvestment}
                 onRemove={removeInvestment}
+                onSyncProventos={syncProventos}
               />
             )}
-          </div>
+            </motion.div>
+          </AnimatePresence>
         )}
       </main>
 

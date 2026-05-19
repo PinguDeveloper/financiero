@@ -14,6 +14,8 @@ const emptyState = (): PersistedState => ({
   transactions: [],
   installmentPlans: [],
   investmentEntries: [],
+  savingsBoxes: [],
+  plannedExpenses: [],
 });
 
 export function useFinance() {
@@ -31,7 +33,12 @@ export function useFinance() {
     setError(null);
     try {
       const s = await api.fetchState();
-      setState(s);
+      setState({
+        ...emptyState(),
+        ...s,
+        savingsBoxes: s.savingsBoxes ?? [],
+        plannedExpenses: s.plannedExpenses ?? [],
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao carregar dados");
     } finally {
@@ -91,7 +98,36 @@ export function useFinance() {
     setState(next);
   }, []);
 
-  const { transactions, installmentPlans, investmentEntries } = state;
+  const addSavingsBox = useCallback(async (input: { name: string; balance: number }) => {
+    setState(await api.createSavingsBoxApi(input));
+  }, []);
+
+  const removeSavingsBox = useCallback(async (id: string) => {
+    setState(await api.deleteSavingsBoxApi(id));
+  }, []);
+
+  const addPlannedExpense = useCallback(
+    async (input: { description: string; amount: number; category: string; dayOfMonth: number }) => {
+      setState(await api.createPlannedExpenseApi(input));
+    },
+    []
+  );
+
+  const togglePlannedExpense = useCallback(async (id: string, active: boolean) => {
+    setState(await api.updatePlannedExpenseApi(id, { active }));
+  }, []);
+
+  const removePlannedExpense = useCallback(async (id: string) => {
+    setState(await api.deletePlannedExpenseApi(id));
+  }, []);
+
+  const syncProventos = useCallback(async () => {
+    const r = await api.syncProventosApi();
+    setState({ ...emptyState(), ...r.state, savingsBoxes: r.state.savingsBoxes ?? [], plannedExpenses: r.state.plannedExpenses ?? [] });
+    return r;
+  }, []);
+
+  const { transactions, installmentPlans, investmentEntries, savingsBoxes, plannedExpenses } = state;
 
   const summary = useMemo(() => {
     let income = 0;
@@ -143,6 +179,14 @@ export function useFinance() {
     payInstallment,
     addInvestment,
     removeInvestment,
+    syncProventos,
+    savingsBoxes: savingsBoxes ?? [],
+    plannedExpenses: plannedExpenses ?? [],
+    addSavingsBox,
+    removeSavingsBox,
+    addPlannedExpense,
+    togglePlannedExpense,
+    removePlannedExpense,
     summary,
     categories: DEFAULT_CATEGORIES,
     loading,

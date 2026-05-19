@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { signUserToken, verifyUserToken } from "../lib/jwt.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { createPasswordResetToken, resetPasswordWithToken } from "../lib/passwordReset.js";
 
 const router = Router();
 
@@ -35,14 +36,48 @@ router.post("/register", async (req: Request, res: Response) => {
     res.status(409).json({ error: "E-mail já cadastrado" });
     return;
   }
-  const passwordHash = await hashPassword(parsed.data.password);
-  const user = await prisma.user.create({ data: { email, passwordHash } });
-  const token = signUserToken(user.id);
-  res.cookie("token", token, authCookieOptions());
-  res.status(201).json({
-    user: { id: user.id, email: user.email },
-    accessToken: token,
+  try {
+    const passwordHash = await hashPassword(parsed.data.password);
+    await prisma.user.create({ data: { email, passwordHash } });
+    res.status(201).json({ ok: true, email });
+  } catch (e) {
+    console.error("[register]", e);
+    res.status(500).json({ error: "Não foi possível criar a conta. Tente novamente." });
+  }
+});
+
+const forgotSchema = z.object({ email: z.string().email().max(255) });
+const resetSchema = z.object({
+  token: z.string().min(16).max(128),
+  password: z.string().min(8).max(128),
+});
+
+router.post("/forgot-password", async (req: Request, res: Response) => {
+  const parsed = forgotSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "E-mail inválido" });
+    return;
+  }
+  const result = await createPasswordResetToken(parsed.data.email);
+  res.json({
+    ok: true,
+    message: "Se o e-mail existir, enviaremos instruções de redefinição.",
+    resetUrl: result.resetUrl,
   });
+});
+
+router.post("/reset-password", async (req: Request, res: Response) => {
+  const parsed = resetSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Dados inválidos" });
+    return;
+  }
+  const result = await resetPasswordWithToken(parsed.data.token, parsed.data.password);
+  if ("error" in result) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 router.post("/login", async (req: Request, res: Response) => {

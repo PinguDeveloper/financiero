@@ -52,10 +52,31 @@ export interface InvestmentEntry {
   otherCosts: number;
 }
 
+export interface SavingsBox {
+  id: string;
+  name: string;
+  balance: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlannedExpense {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  dayOfMonth: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PersistedState {
   transactions: Transaction[];
   installmentPlans: InstallmentPlan[];
   investmentEntries: InvestmentEntry[];
+  savingsBoxes?: SavingsBox[];
+  plannedExpenses?: PlannedExpense[];
 }
 
 export const DEFAULT_CATEGORIES = {

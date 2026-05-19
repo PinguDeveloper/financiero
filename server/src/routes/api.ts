@@ -2,7 +2,20 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import { syncProventosForUser } from "../lib/dividendSync.js";
 import { resolveMarketQuote } from "../lib/marketQuotes.js";
+import {
+  createPlannedExpense,
+  deletePlannedExpense,
+  listPlannedExpenses,
+  updatePlannedExpense,
+} from "../lib/plannedExpenses.js";
+import {
+  createSavingsBox,
+  deleteSavingsBox,
+  listSavingsBoxes,
+  updateSavingsBox,
+} from "../lib/savingsBoxes.js";
 import { decimalToNumber, toISODate } from "../lib/serialize.js";
 import { requireUser } from "../middleware/requireUser.js";
 
@@ -93,6 +106,8 @@ async function serializeState(userId: string) {
       unitPrice: e.unitPrice != null ? decimalToNumber(e.unitPrice) : null,
       otherCosts: decimalToNumber(e.otherCosts),
     })),
+    savingsBoxes: await listSavingsBoxes(userId).catch(() => []),
+    plannedExpenses: await listPlannedExpenses(userId).catch(() => []),
   };
 }
 
@@ -294,6 +309,108 @@ router.delete("/investments/:id", async (req: Request, res: Response) => {
   }
   await prisma.investmentEntry.delete({ where: { id } });
   res.json(await serializeState(userId));
+});
+
+const savingsSchema = z.object({
+  name: z.string().min(1).max(120),
+  balance: z.number().nonnegative().finite().optional(),
+});
+
+router.post("/savings-boxes", async (req: Request, res: Response) => {
+  const parsed = savingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Dados inválidos" });
+    return;
+  }
+  const userId = req.userId!;
+  await createSavingsBox(userId, parsed.data);
+  res.status(201).json(await serializeState(userId));
+});
+
+router.patch("/savings-boxes/:id", async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const updated = await updateSavingsBox(userId, req.params.id!, req.body);
+  if (!updated) {
+    res.status(404).json({ error: "Não encontrado" });
+    return;
+  }
+  res.json(await serializeState(userId));
+});
+
+router.delete("/savings-boxes/:id", async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const ok = await deleteSavingsBox(userId, req.params.id!);
+  if (!ok) {
+    res.status(404).json({ error: "Não encontrado" });
+    return;
+  }
+  res.json(await serializeState(userId));
+});
+
+const plannedSchema = z.object({
+  description: z.string().min(1).max(500),
+  amount: z.number().positive().finite(),
+  category: z.string().min(1).max(120),
+  dayOfMonth: z.number().int().min(1).max(28),
+  active: z.boolean().optional(),
+});
+
+router.post("/planned-expenses", async (req: Request, res: Response) => {
+  const parsed = plannedSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Dados inválidos" });
+    return;
+  }
+  const userId = req.userId!;
+  await createPlannedExpense(userId, parsed.data);
+  res.status(201).json(await serializeState(userId));
+});
+
+router.patch("/planned-expenses/:id", async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const updated = await updatePlannedExpense(userId, req.params.id!, req.body);
+  if (!updated) {
+    res.status(404).json({ error: "Não encontrado" });
+    return;
+  }
+  res.json(await serializeState(userId));
+});
+
+router.delete("/planned-expenses/:id", async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const ok = await deletePlannedExpense(userId, req.params.id!);
+  if (!ok) {
+    res.status(404).json({ error: "Não encontrado" });
+    return;
+  }
+  res.json(await serializeState(userId));
+});
+
+router.post("/investments/sync-proventos", async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const result = await syncProventosForUser(userId);
+  res.json({ ...result, state: await serializeState(userId) });
+});
+
+const quotesBodySchema = z.object({
+  tickers: z.array(z.string().min(1).max(12)).min(1).max(24),
+});
+
+router.post("/market/quotes", async (req: Request, res: Response) => {
+  const parsed = quotesBodySchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Lista de tickers inválida" });
+    return;
+  }
+  const quotes: Record<string, Awaited<ReturnType<typeof resolveMarketQuote>>> = {};
+  const failed: string[] = [];
+  for (const raw of parsed.data.tickers) {
+    const ticker = raw.trim().toUpperCase();
+    const q = await resolveMarketQuote(ticker);
+    if (q) quotes[ticker] = q;
+    else failed.push(ticker);
+  }
+  res.json({ quotes, failed });
 });
 
 router.get("/market/quote", async (req: Request, res: Response) => {

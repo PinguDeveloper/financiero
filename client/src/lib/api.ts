@@ -67,16 +67,29 @@ export async function authLogin(email: string, password: string): Promise<{ user
   return { user: r.user };
 }
 
-export async function authRegister(
-  email: string,
-  password: string
-): Promise<{ user: AuthUser }> {
-  const r = await request<{ user: AuthUser; accessToken: string }>("/auth/register", {
+export async function authRegister(email: string, password: string): Promise<{ ok: true; email: string }> {
+  return request("/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-  setStoredAccessToken(r.accessToken);
-  return { user: r.user };
+}
+
+export async function authForgotPassword(email: string): Promise<{
+  ok: boolean;
+  message: string;
+  resetUrl?: string;
+}> {
+  return request("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function authResetPassword(token: string, password: string): Promise<{ ok: boolean }> {
+  return request("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ token, password }),
+  });
 }
 
 export async function authLogout(): Promise<void> {
@@ -159,4 +172,63 @@ export type MarketQuote = {
 export async function fetchMarketQuote(ticker: string): Promise<MarketQuote> {
   const q = new URLSearchParams({ ticker });
   return request(`/api/market/quote?${q.toString()}`);
+}
+
+export async function fetchMarketQuotes(tickers: string[]): Promise<{
+  quotes: Record<string, MarketQuote>;
+  failed: string[];
+}> {
+  return request("/api/market/quotes", {
+    method: "POST",
+    body: JSON.stringify({ tickers }),
+  });
+}
+
+export async function syncProventosApi(): Promise<{
+  upcoming: { ticker: string; paymentDate: string; amountPerShare: number; label: string }[];
+  created: number;
+  state: PersistedState;
+}> {
+  return request("/api/investments/sync-proventos", { method: "POST" });
+}
+
+export async function createSavingsBoxApi(input: { name: string; balance: number }) {
+  return request<PersistedState>("/api/savings-boxes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteSavingsBoxApi(id: string) {
+  return request<PersistedState>(`/api/savings-boxes/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function createPlannedExpenseApi(input: {
+  description: string;
+  amount: number;
+  category: string;
+  dayOfMonth: number;
+}) {
+  return request<PersistedState>("/api/planned-expenses", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updatePlannedExpenseApi(
+  id: string,
+  input: Partial<{ active: boolean; amount: number; description: string }>
+) {
+  return request<PersistedState>(`/api/planned-expenses/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deletePlannedExpenseApi(id: string) {
+  return request<PersistedState>(`/api/planned-expenses/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
