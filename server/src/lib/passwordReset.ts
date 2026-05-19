@@ -17,6 +17,7 @@ function resetUrlForToken(rawToken: string): string {
 export async function createPasswordResetToken(email: string): Promise<{
   ok: true;
   emailSent: boolean;
+  emailConfigured: boolean;
   /** Apenas em dev quando e-mail não está configurado */
   resetUrl?: string;
   /** Motivo da falha (dev ou RESET_EXPOSE_TOKEN) */
@@ -24,7 +25,7 @@ export async function createPasswordResetToken(email: string): Promise<{
 }> {
   const normalized = email.trim().toLowerCase();
   const user = await prisma.user.findUnique({ where: { email: normalized } });
-  if (!user) return { ok: true, emailSent: false };
+  if (!user) return { ok: true, emailSent: false, emailConfigured: isEmailConfigured() };
 
   const raw = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashToken(raw);
@@ -39,14 +40,20 @@ export async function createPasswordResetToken(email: string): Promise<{
   const { sent, error } = await sendPasswordResetEmail(user.email, resetUrl);
 
   if (sent) {
-    return { ok: true, emailSent: true };
+    return { ok: true, emailSent: true, emailConfigured: true };
   }
 
   const exposeDev =
     process.env.NODE_ENV !== "production" || process.env.RESET_EXPOSE_TOKEN === "1";
   if (exposeDev) {
     console.info(`[password-reset] E-mail não enviado (${error ?? "sem API"}). Link: ${resetUrl}`);
-    return { ok: true, emailSent: false, resetUrl, emailError: error };
+    return {
+      ok: true,
+      emailSent: false,
+      emailConfigured: isEmailConfigured(),
+      resetUrl,
+      emailError: error,
+    };
   }
 
   if (!isEmailConfigured()) {
@@ -55,7 +62,7 @@ export async function createPasswordResetToken(email: string): Promise<{
     console.error("[password-reset] Falha ao enviar:", error);
   }
 
-  return { ok: true, emailSent: false };
+  return { ok: true, emailSent: false, emailConfigured: isEmailConfigured(), emailError: error };
 }
 
 export async function resetPasswordWithToken(

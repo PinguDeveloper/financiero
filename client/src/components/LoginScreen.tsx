@@ -22,6 +22,7 @@ export function LoginScreen() {
   const [forgotEmailSent, setForgotEmailSent] = useState(false);
   const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
   const [forgotEmailError, setForgotEmailError] = useState<string | null>(null);
+  const [forgotEmailConfigured, setForgotEmailConfigured] = useState(true);
 
   useEffect(() => {
     const t = resetTokenFromUrl();
@@ -50,6 +51,7 @@ export function LoginScreen() {
         setForgotEmailSent(Boolean(r.emailSent));
         setDevResetUrl(r.resetUrl ?? null);
         setForgotEmailError(r.emailError ?? null);
+        setForgotEmailConfigured(r.emailConfigured !== false);
         setSuccess(r.message);
       } else if (mode === "reset" && resetToken) {
         await api.authResetPassword(resetToken, password);
@@ -111,17 +113,24 @@ export function LoginScreen() {
               <li>Clique em &quot;Criar nova senha&quot; (válido por 1 hora)</li>
               <li>Defina sua nova senha e volte aqui para entrar</li>
             </ol>
-            {!forgotEmailSent && forgotEmailError ? (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                {forgotEmailError.includes("only send testing emails")
-                  ? "Modo teste da Resend (onboarding@resend.dev): só é possível enviar para o e-mail da sua conta Resend. Use esse e-mail no cadastro do app, ou verifique um domínio em resend.com/domains para enviar a qualquer destinatário."
-                  : forgotEmailError}
+            {!forgotEmailConfigured ? (
+              <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                O servidor de produção não tem e-mail configurado. No Render, adicione{" "}
+                <code className="text-red-100">RESEND_API_KEY</code> e{" "}
+                <code className="text-red-100">EMAIL_FROM</code>, depois faça redeploy da API.
               </p>
             ) : null}
-            {!forgotEmailSent && !forgotEmailError && (
+            {!forgotEmailSent && forgotEmailError ? (
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                {forgotEmailError}
+              </p>
+            ) : null}
+            {!forgotEmailSent && forgotEmailConfigured && !forgotEmailError && (
               <p className="text-xs text-amber-300/90">
-                Se o e-mail não estiver cadastrado no app, nada será enviado. Em desenvolvimento, o
-                link de redefinição pode aparecer abaixo.
+                Se este e-mail não estiver cadastrado em{" "}
+                <span className="text-accent">financiero-client.vercel.app</span>, nada será enviado.
+                Com <code className="text-amber-200">onboarding@resend.dev</code>, só chega no e-mail
+                da conta Resend.
               </p>
             )}
             {devResetUrl ? (
@@ -248,6 +257,7 @@ export function LoginScreen() {
                   setForgotEmailSent(false);
                   setDevResetUrl(null);
                   setForgotEmailError(null);
+                  setForgotEmailConfigured(true);
                 }}
               >
                 Esqueci a senha

@@ -78,6 +78,7 @@ export async function authForgotPassword(email: string): Promise<{
   ok: boolean;
   message: string;
   emailSent?: boolean;
+  emailConfigured?: boolean;
   resetUrl?: string;
   emailError?: string;
 }> {

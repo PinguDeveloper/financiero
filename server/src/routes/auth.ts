@@ -4,7 +4,17 @@ import { z } from "zod";
 import { prisma } from "../db.js";
 import { signUserToken, verifyUserToken } from "../lib/jwt.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { isEmailConfigured } from "../lib/email.js";
 import { createPasswordResetToken, resetPasswordWithToken } from "../lib/passwordReset.js";
+
+function emailErrorForClient(error?: string): string | undefined {
+  if (!error) return undefined;
+  if (error.includes("RESEND_API_KEY")) return error;
+  if (error.includes("only send testing emails")) {
+    return "Modo teste Resend: só envia para o e-mail da sua conta Resend. Cadastre-se no app com esse e-mail ou verifique um domínio em resend.com/domains.";
+  }
+  return process.env.NODE_ENV !== "production" ? error : undefined;
+}
 
 const router = Router();
 
@@ -66,8 +76,9 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
     ok: true,
     message,
     emailSent: result.emailSent,
+    emailConfigured: result.emailConfigured ?? isEmailConfigured(),
     resetUrl: result.resetUrl,
-    emailError: result.emailError,
+    emailError: emailErrorForClient(result.emailError),
   });
 });
 
