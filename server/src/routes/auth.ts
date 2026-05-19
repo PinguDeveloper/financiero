@@ -59,10 +59,15 @@ router.post("/forgot-password", async (req: Request, res: Response) => {
     return;
   }
   const result = await createPasswordResetToken(parsed.data.email);
+  const message = result.emailSent
+    ? "Enviamos um e-mail com o link para redefinir sua senha. Confira também a pasta de spam."
+    : "Se o e-mail estiver cadastrado, você receberá as instruções em instantes.";
   res.json({
     ok: true,
-    message: "Se o e-mail existir, enviaremos instruções de redefinição.",
+    message,
+    emailSent: result.emailSent,
     resetUrl: result.resetUrl,
+    emailError: result.emailError,
   });
 });
 

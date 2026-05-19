@@ -19,6 +19,9 @@ export function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [forgotEmailSent, setForgotEmailSent] = useState(false);
+  const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
+  const [forgotEmailError, setForgotEmailError] = useState<string | null>(null);
 
   useEffect(() => {
     const t = resetTokenFromUrl();
@@ -44,10 +47,10 @@ export function LoginScreen() {
         setSuccess("Conta criada! Faça login com seu e-mail e senha.");
       } else if (mode === "forgot") {
         const r = await api.authForgotPassword(email);
+        setForgotEmailSent(Boolean(r.emailSent));
+        setDevResetUrl(r.resetUrl ?? null);
+        setForgotEmailError(r.emailError ?? null);
         setSuccess(r.message);
-        if (r.resetUrl) {
-          setSuccess(`${r.message} Link de teste: ${r.resetUrl}`);
-        }
       } else if (mode === "reset" && resetToken) {
         await api.authResetPassword(resetToken, password);
         setMode("login");
@@ -89,12 +92,63 @@ export function LoginScreen() {
         </p>
         <h1 className="mt-2 text-center font-display text-2xl font-bold text-white">{title}</h1>
         <p className="mt-2 text-center text-sm text-slate-400">
-          {mode === "forgot"
-            ? "Informe seu e-mail. Se existir conta, enviaremos instruções."
+          {mode === "forgot" && !success
+            ? "Informe o e-mail da sua conta. Enviaremos um link seguro para criar uma nova senha."
             : mode === "reset"
-              ? "Defina uma nova senha (mín. 8 caracteres)."
-              : "Seus dados ficam vinculados à sua conta, com acesso protegido por senha."}
+              ? "Escolha uma senha forte. O link expira em 1 hora."
+              : mode === "forgot" && success
+                ? "Verifique sua caixa de entrada."
+                : "Seus dados ficam vinculados à sua conta, com acesso protegido por senha."}
         </p>
+
+        {mode === "forgot" && success ? (
+          <div className="mt-8 space-y-4 rounded-xl border border-accent/25 bg-accent/5 p-5 text-left">
+            <p className="text-sm font-semibold text-white">Próximos passos</p>
+            <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-300">
+              <li>
+                Abra o e-mail enviado para <span className="font-medium text-accent">{email}</span>
+              </li>
+              <li>Clique em &quot;Criar nova senha&quot; (válido por 1 hora)</li>
+              <li>Defina sua nova senha e volte aqui para entrar</li>
+            </ol>
+            {!forgotEmailSent && forgotEmailError ? (
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                {forgotEmailError.includes("only send testing emails")
+                  ? "Modo teste da Resend (onboarding@resend.dev): só é possível enviar para o e-mail da sua conta Resend. Use esse e-mail no cadastro do app, ou verifique um domínio em resend.com/domains para enviar a qualquer destinatário."
+                  : forgotEmailError}
+              </p>
+            ) : null}
+            {!forgotEmailSent && !forgotEmailError && (
+              <p className="text-xs text-amber-300/90">
+                Se o e-mail não estiver cadastrado no app, nada será enviado. Em desenvolvimento, o
+                link de redefinição pode aparecer abaixo.
+              </p>
+            )}
+            {devResetUrl ? (
+              <a
+                href={devResetUrl}
+                className="block break-all rounded-lg border border-surface-border bg-surface px-3 py-2 text-xs text-accent hover:underline"
+              >
+                {devResetUrl}
+              </a>
+            ) : null}
+            <p className="text-xs text-slate-500">
+              Não chegou? Confira spam/lixo eletrônico ou aguarde alguns minutos.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setSuccess(null);
+                setForgotEmailSent(false);
+                setDevResetUrl(null);
+              }}
+              className="w-full rounded-xl border border-surface-border py-2.5 text-sm font-medium text-slate-300 hover:text-white"
+            >
+              Voltar ao login
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
           {mode !== "reset" && (
             <div>
@@ -111,10 +165,20 @@ export function LoginScreen() {
               />
             </div>
           )}
+          {mode === "reset" && (
+            <div className="rounded-xl border border-surface-border bg-surface/60 p-4 text-sm text-slate-400">
+              <p className="font-medium text-slate-300">Instruções</p>
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                <li>Mínimo de 8 caracteres</li>
+                <li>O link do e-mail vale por 1 hora</li>
+                <li>Depois de salvar, entre com a nova senha</li>
+              </ul>
+            </div>
+          )}
           {mode !== "forgot" && (
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
-                Senha (mín. 8 caracteres)
+                {mode === "reset" ? "Nova senha" : "Senha (mín. 8 caracteres)"}
               </label>
               <input
                 type="password"
@@ -170,6 +234,7 @@ export function LoginScreen() {
                     : "Salvar senha"}
           </motion.button>
         </form>
+        )}
         <p className="mt-6 text-center text-sm text-slate-500">
           {mode === "login" && (
             <>
@@ -180,6 +245,9 @@ export function LoginScreen() {
                   setMode("forgot");
                   setMessage(null);
                   setSuccess(null);
+                  setForgotEmailSent(false);
+                  setDevResetUrl(null);
+                  setForgotEmailError(null);
                 }}
               >
                 Esqueci a senha

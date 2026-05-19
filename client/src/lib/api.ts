@@ -77,7 +77,9 @@ export async function authRegister(email: string, password: string): Promise<{ o
 export async function authForgotPassword(email: string): Promise<{
   ok: boolean;
   message: string;
+  emailSent?: boolean;
   resetUrl?: string;
+  emailError?: string;
 }> {
   return request("/auth/forgot-password", {
     method: "POST",
@@ -202,6 +204,13 @@ export async function createSavingsBoxApi(input: { name: string; balance: number
 export async function deleteSavingsBoxApi(id: string) {
   return request<PersistedState>(`/api/savings-boxes/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+export async function depositSavingsBoxApi(id: string, amount: number) {
+  return request<PersistedState>(`/api/savings-boxes/${encodeURIComponent(id)}/deposit`, {
+    method: "POST",
+    body: JSON.stringify({ amount }),
   });
 }
 

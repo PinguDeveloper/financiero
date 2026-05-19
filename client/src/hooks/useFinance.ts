@@ -106,6 +106,10 @@ export function useFinance() {
     setState(await api.deleteSavingsBoxApi(id));
   }, []);
 
+  const depositSavingsBox = useCallback(async (id: string, amount: number) => {
+    setState(await api.depositSavingsBoxApi(id, amount));
+  }, []);
+
   const addPlannedExpense = useCallback(
     async (input: { description: string; amount: number; category: string; dayOfMonth: number }) => {
       setState(await api.createPlannedExpenseApi(input));
@@ -183,6 +187,7 @@ export function useFinance() {
     savingsBoxes: savingsBoxes ?? [],
     plannedExpenses: plannedExpenses ?? [],
     addSavingsBox,
+    depositSavingsBox,
     removeSavingsBox,
     addPlannedExpense,
     togglePlannedExpense,

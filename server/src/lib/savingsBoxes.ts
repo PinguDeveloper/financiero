@@ -61,3 +61,16 @@ export async function deleteSavingsBox(userId: string, id: string) {
   await prisma.savingsBox.delete({ where: { id } });
   return true;
 }
+
+export async function depositSavingsBox(userId: string, id: string, amount: number) {
+  const row = await prisma.savingsBox.findFirst({ where: { id, userId } });
+  if (!row) return null;
+  const current = decimalToNumber(row.balance as never);
+  const next = Math.round((current + amount) * 100) / 100;
+  return map(
+    await prisma.savingsBox.update({
+      where: { id },
+      data: { balance: next },
+    })
+  );
+}

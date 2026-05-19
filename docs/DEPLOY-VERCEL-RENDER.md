@@ -36,6 +36,9 @@ No plano gratuito do Render, arquivos **SQLite** não são persistentes entre re
 | `CLIENT_ORIGIN` | `https://seu-app.vercel.app` — pode listar várias separadas por vírgula: `https://app.vercel.app,http://localhost:5180` |
 | `ALLOW_VERCEL_PREVIEWS` | Opcional: `1` para aceitar qualquer subdomínio `*.vercel.app` (útil para PR previews) |
 | `BRAPI_TOKEN` | Opcional — [brapi.dev](https://brapi.dev) para mais limite de cotações |
+| `APP_PUBLIC_URL` | URL do front na Vercel (ex.: `https://seu-app.vercel.app`) — link no e-mail de senha |
+| `RESEND_API_KEY` | [Resend](https://resend.com) — envio do e-mail “esqueci a senha” |
+| `EMAIL_FROM` | Ex.: `Controle Financeiro <noreply@seudominio.com>` (domínio verificado na Resend) |
 | `PORT` | Render define automaticamente; não precisa fixar |
 
 Após o deploy, anote a URL pública da API, por exemplo: `https://controle-financeiro-api.onrender.com`.
@@ -57,14 +60,82 @@ Após o deploy, anote a URL pública da API, por exemplo: `https://controle-fina
 
 O front chama `fetch(\`${VITE_API_BASE}/auth/...\`)` com `credentials: 'include'`, então o cookie de sessão é gravado no **domínio da API** (Render) e enviado nas requisições para a mesma API — funciona com front e back em domínios diferentes, desde que a API use **HTTPS** e cookies com `SameSite=None` (já configurado em `NODE_ENV=production`).
 
-## 4. Checklist rápido
+## 4. E-mail em produção (Resend + domínio do site na Vercel)
 
-- [ ] `CLIENT_ORIGIN` na API = URL exata do site na Vercel (https).
+O “esqueci a senha” só envia e-mail de verdade quando a Resend consegue enviar pelo **seu domínio**. O remetente de teste `onboarding@resend.dev` **não serve em produção** (só manda para o e-mail da sua conta Resend).
+
+### Domínio: o que funciona e o que não funciona
+
+| URL do site | Dá para verificar na Resend? |
+|-------------|------------------------------|
+| `https://meu-app.vercel.app` (só subdomínio Vercel) | **Não** — você não controla o DNS de `vercel.app` |
+| `https://www.meusite.com` ou `https://meusite.com` (domínio **próprio** ligado ao projeto na Vercel) | **Sim** — use esse domínio na Resend |
+
+Se hoje o site principal é só `*.vercel.app`, em **Vercel → Project → Settings → Domains** adicione um domínio que você controla (comprou em Registro.br, Cloudflare, etc.) e aponte o DNS conforme a Vercel pedir. O “domínio da Vercel” que importa para e-mail é esse **domínio customizado**, não o `vercel.app`.
+
+### Passo a passo (produção real)
+
+**1. Resend — adicionar domínio**
+
+1. Acesse [resend.com/domains](https://resend.com/domains) → **Add Domain**.
+2. Digite o domínio **raiz** que aparece na Vercel (ex.: `meusite.com`), não a URL da API no Render.
+3. A Resend mostra registros DNS (SPF, DKIM, etc.). Copie todos.
+
+**2. Onde colocar os DNS**
+
+- Se o domínio usa **nameservers da Vercel**: Vercel → **Domains** → seu domínio → **DNS Records** → adicione cada registro da Resend.
+- Se o domínio está no **Registro.br / Cloudflare / outro**: painel do registrador → DNS → mesmos registros.
+
+Aguarde **Verify** na Resend (minutos a algumas horas). Status precisa ficar **Verified**.
+
+**3. Render — variáveis da API** (serviço em `server/`)
+
+Substitua pelos seus valores reais:
+
+| Variável | Valor de produção |
+|----------|-------------------|
+| `NODE_ENV` | `production` |
+| `APP_PUBLIC_URL` | URL **exata** do site principal (a que o usuário abre), ex.: `https://www.meusite.com` — **sem** `/` no final |
+| `CLIENT_ORIGIN` | A mesma URL (e previews se quiser): `https://www.meusite.com,https://meusite.com` |
+| `RESEND_API_KEY` | Chave em [resend.com/api-keys](https://resend.com/api-keys) (gere uma nova se a antiga vazou) |
+| `EMAIL_FROM` | `Controle Financeiro <noreply@meusite.com>` — o domínio depois de `@` deve ser o **verificado** na Resend |
+
+Salve e faça **Manual Deploy** (ou push no `main`) para a API reiniciar com as variáveis novas.
+
+**4. Vercel — front**
+
+| Variável | Valor |
+|----------|--------|
+| `VITE_API_BASE` | `https://sua-api.onrender.com` (sem barra no final) |
+
+Redeploy do front se alterou `VITE_API_BASE`.
+
+**5. Testar no site principal**
+
+1. Abra o site em produção (domínio customizado ou `vercel.app`).
+2. Cadastre ou use um usuário com um e-mail **qualquer** (Gmail, etc.) — depois do domínio verificado, qualquer destinatário funciona.
+3. **Esqueci a senha** → deve chegar e-mail com link `https://seu-dominio/?reset=...`.
+4. Se não chegar: painel Resend → **Emails** (logs), pasta spam, e logs do Render (`[email]`, `[password-reset]`).
+
+### Erros comuns
+
+- **`EMAIL_FROM` com domínio não verificado** → envio falha; confira Domains na Resend.
+- **`APP_PUBLIC_URL` errado** (localhost ou outro domínio) → e-mail chega, mas o link abre o lugar errado.
+- **`CLIENT_ORIGIN` sem a URL do site** → login/cookie pode falhar no navegador (CORS).
+- Ainda usar `onboarding@resend.dev` em produção → só funciona para o e-mail da conta Resend.
+
+## 5. Checklist rápido
+
+- [ ] Domínio **próprio** na Vercel (não só `*.vercel.app`) ou aceitar limitação até ter um.
+- [ ] Domínio **Verified** na Resend; `EMAIL_FROM` usa `@seudominio.com`.
+- [ ] `APP_PUBLIC_URL` = URL do site principal na Vercel.
+- [ ] `CLIENT_ORIGIN` na API = mesma URL (https).
 - [ ] `VITE_API_BASE` na Vercel = URL da API no Render (https).
-- [ ] Postgres ativo e `npm run db:migrate` (ou `prisma migrate deploy`) aplicado no build.
-- [ ] Testar cadastro, login e uma compra de investimento após o deploy.
+- [ ] `RESEND_API_KEY` no Render (nunca no repositório).
+- [ ] Postgres ativo e `npm run db:migrate` no build da API.
+- [ ] Testar **esqueci a senha** no site principal após redeploy.
 
-## 5. Repositórios separados (opcional)
+## 6. Repositórios separados (opcional)
 
 Se quiser **dois repositórios** Git distintos:
 

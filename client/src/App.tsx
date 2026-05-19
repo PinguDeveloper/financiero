@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SavingsBoxesPanel } from "./components/SavingsBoxesPanel";
-import { PlannedExpensesPanel } from "./components/PlannedExpensesPanel";
 import { MotionSection } from "./lib/motion";
 import { AddTransactionForm } from "./components/AddTransactionForm";
 import { ChartsSection, IncomeByCategoryMini } from "./components/ChartsSection";
@@ -74,12 +73,9 @@ function FinanceShell() {
     removeInvestment,
     syncProventos,
     savingsBoxes,
-    plannedExpenses,
     addSavingsBox,
+    depositSavingsBox,
     removeSavingsBox,
-    addPlannedExpense,
-    togglePlannedExpense,
-    removePlannedExpense,
     loading,
     error,
   } = useFinance();
@@ -237,16 +233,8 @@ function FinanceShell() {
                   <SavingsBoxesPanel
                     boxes={savingsBoxes}
                     onAdd={addSavingsBox}
+                    onDeposit={depositSavingsBox}
                     onRemove={removeSavingsBox}
-                  />
-                </MotionSection>
-
-                <MotionSection delay={0.08}>
-                  <PlannedExpensesPanel
-                    expenses={plannedExpenses}
-                    onAdd={addPlannedExpense}
-                    onToggle={togglePlannedExpense}
-                    onRemove={removePlannedExpense}
                   />
                 </MotionSection>
 

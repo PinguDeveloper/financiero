@@ -13,6 +13,7 @@ import {
 import {
   createSavingsBox,
   deleteSavingsBox,
+  depositSavingsBox,
   listSavingsBoxes,
   updateSavingsBox,
 } from "../lib/savingsBoxes.js";
@@ -332,6 +333,25 @@ router.patch("/savings-boxes/:id", async (req: Request, res: Response) => {
   const updated = await updateSavingsBox(userId, req.params.id!, req.body);
   if (!updated) {
     res.status(404).json({ error: "Não encontrado" });
+    return;
+  }
+  res.json(await serializeState(userId));
+});
+
+const depositSchema = z.object({
+  amount: z.number().positive().finite(),
+});
+
+router.post("/savings-boxes/:id/deposit", async (req: Request, res: Response) => {
+  const parsed = depositSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Informe um valor válido" });
+    return;
+  }
+  const userId = req.userId!;
+  const updated = await depositSavingsBox(userId, req.params.id!, parsed.data.amount);
+  if (!updated) {
+    res.status(404).json({ error: "Caixinha não encontrada" });
     return;
   }
   res.json(await serializeState(userId));
