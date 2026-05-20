@@ -30,20 +30,6 @@ const PLANS = [
     to: "/cadastro",
     highlight: true,
   },
-  {
-    id: "yearly",
-    name: "Anual",
-    price: "R$ 249,90",
-    period: "/ ano",
-    features: [
-      "Tudo do plano mensal",
-      "Melhor custo-benefício",
-      "Pagamento único anual",
-    ],
-    cta: "Assinar anual",
-    to: "/cadastro",
-    highlight: false,
-  },
 ];
 
 const BENEFITS = [
@@ -171,9 +157,9 @@ export function LandingPage() {
             Planos
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-center text-slate-400">
-            Comece com o teste gratuito. Depois, escolha mensal ou anual via Stripe.
+            Comece com o teste gratuito. Depois, assine o plano mensal via Stripe.
           </p>
-          <div className="mt-12 grid gap-8 lg:grid-cols-3">
+          <div className="mt-12 grid gap-8 sm:grid-cols-2 sm:max-w-3xl sm:mx-auto">
             {PLANS.map((plan) => (
               <div
                 key={plan.id}
@@ -184,10 +170,10 @@ export function LandingPage() {
                 }`}
               >
                 <h3 className="font-display text-xl font-bold text-white">{plan.name}</h3>
-                <p className="mt-4">
-                  <span className="text-3xl font-bold text-white">{plan.price}</span>
-                  <span className="text-slate-500">{plan.period}</span>
-                </p>
+                <div className="mt-4">
+                  <p className="text-3xl font-bold text-white">{plan.price}</p>
+                  <p className="mt-1 text-sm text-slate-500">{plan.period}</p>
+                </div>
                 <ul className="mt-6 flex-1 space-y-3 text-sm text-slate-400">
                   {plan.features.map((f) => (
                     <li key={f} className="flex gap-2">

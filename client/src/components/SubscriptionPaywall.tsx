@@ -19,7 +19,7 @@ export function SubscriptionPaywall({
   useEffect(() => {
     api
       .billingPlans()
-      .then((r) => setPlans(r.plans.filter((p) => p.id !== "trial")))
+      .then((r) => setPlans(r.plans.filter((p) => p.id === "monthly")))
       .catch(() => setPlans([]));
   }, []);
 
