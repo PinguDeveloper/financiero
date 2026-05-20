@@ -59,6 +59,45 @@ Se você não pediu isso, ignore este e-mail.
 — Controle financeiro`;
 }
 
+export async function sendVerificationCodeEmail(
+  to: string,
+  code: string
+): Promise<{ sent: boolean; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) {
+    return { sent: false, error: "RESEND_API_KEY não configurada no servidor" };
+  }
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:32px">
+  <div style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:16px;padding:32px;border:1px solid #334155">
+  <p style="margin:0;font-size:12px;text-transform:uppercase;color:#60a5fa;letter-spacing:.1em">Atlas Invest</p>
+  <h1 style="color:#f8fafc;font-size:22px;margin:16px 0 8px">Confirme seu cadastro</h1>
+  <p style="color:#94a3b8;line-height:1.6">Use o código abaixo na tela de cadastro. Válido por <strong>15 minutos</strong>.</p>
+  <p style="font-size:32px;font-weight:700;letter-spacing:8px;text-align:center;color:#3b82f6;margin:28px 0">${code}</p>
+  <p style="color:#64748b;font-size:13px">Se você não solicitou este cadastro, ignore este e-mail.</p>
+  </div></body></html>`;
+
+  const resend = new Resend(apiKey);
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM,
+      to: [to],
+      subject: "Código de verificação — Atlas Invest",
+      html,
+      text: `Seu código de verificação Atlas Invest: ${code}\nVálido por 15 minutos.`,
+    });
+    if (error) {
+      console.error("[email] Resend:", error);
+      return { sent: false, error: error.message };
+    }
+    return { sent: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Falha ao enviar e-mail";
+    console.error("[email]", msg);
+    return { sent: false, error: msg };
+  }
+}
+
 export async function sendPasswordResetEmail(
   to: string,
   resetUrl: string

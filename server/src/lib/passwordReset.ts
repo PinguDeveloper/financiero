@@ -11,7 +11,7 @@ function hashToken(token: string): string {
 
 function resetUrlForToken(rawToken: string): string {
   const base = (process.env.APP_PUBLIC_URL ?? "http://127.0.0.1:5180").replace(/\/$/, "");
-  return `${base}/?reset=${rawToken}`;
+  return `${base}/login?reset=${rawToken}`;
 }
 
 export async function createPasswordResetToken(email: string): Promise<{

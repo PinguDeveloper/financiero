@@ -11,6 +11,10 @@ model User {
   id                 String               @id @default(uuid())
   email              String               @unique
   passwordHash       String
+  emailVerifiedAt    DateTime?
+  subscriptionStatus String               @default("trial")
+  trialEndsAt        DateTime?
+  subscriptionEndsAt DateTime?
   createdAt          DateTime             @default(now())
   transactions       Transaction[]
   installmentPlans   InstallmentPlan[]
@@ -18,6 +22,15 @@ model User {
   savingsBoxes       SavingsBox[]
   plannedExpenses    PlannedExpense[]
   passwordResets     PasswordResetToken[]
+}
+
+model PendingRegistration {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  codeHash     String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
 }
 
 model PasswordResetToken {

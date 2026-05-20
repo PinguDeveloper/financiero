@@ -1,18 +1,22 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../lib/api";
 
-type Mode = "login" | "register" | "forgot" | "reset";
+type Mode = "login" | "register" | "register-verify" | "forgot" | "reset";
 
 function resetTokenFromUrl(): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get("reset");
 }
 
-export function LoginScreen() {
-  const { login, register } = useAuth();
-  const [mode, setMode] = useState<Mode>("login");
+export function LoginScreen({ initialMode = "login" }: { initialMode?: "login" | "register" }) {
+  const navigate = useNavigate();
+  const { login, registerStart, registerVerify } = useAuth();
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [resetToken, setResetToken] = useState<string | null>(null);
@@ -40,12 +44,20 @@ export function LoginScreen() {
     try {
       if (mode === "login") {
         await login(email, password);
+        navigate("/app", { replace: true });
       } else if (mode === "register") {
-        const r = await register(email, password);
-        setMode("login");
-        setPassword("");
-        setEmail(r.email);
-        setSuccess("Conta criada! Faça login com seu e-mail e senha.");
+        const r = await registerStart(email, password);
+        setDevCode(r.devCode ?? null);
+        setMode("register-verify");
+        setSuccess(
+          r.emailSent
+            ? "Enviamos um código de 6 dígitos para seu e-mail."
+            : "Use o código abaixo (e-mail não enviado no servidor)."
+        );
+        if (r.emailError) setMessage(r.emailError);
+      } else if (mode === "register-verify") {
+        await registerVerify(email, verifyCode);
+        navigate("/app", { replace: true });
       } else if (mode === "forgot") {
         const r = await api.authForgotPassword(email);
         setForgotEmailSent(Boolean(r.emailSent));
@@ -73,7 +85,9 @@ export function LoginScreen() {
       ? "Entrar"
       : mode === "register"
         ? "Criar conta"
-        : mode === "forgot"
+        : mode === "register-verify"
+          ? "Confirmar código"
+          : mode === "forgot"
           ? "Esqueci a senha"
           : "Nova senha";
 
@@ -89,9 +103,9 @@ export function LoginScreen() {
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         className="card-interactive w-full max-w-md rounded-2xl border border-surface-border bg-surface-raised p-8 shadow-xl shadow-black/30"
       >
-        <p className="text-center text-xs font-semibold uppercase tracking-widest text-accent">
-          Controle financeiro
-        </p>
+        <Link to="/" className="block text-center text-xs font-semibold uppercase tracking-widest text-accent hover:underline">
+          Atlas Invest
+        </Link>
         <h1 className="mt-2 text-center font-display text-2xl font-bold text-white">{title}</h1>
         <p className="mt-2 text-center text-sm text-slate-400">
           {mode === "forgot" && !success
@@ -128,9 +142,10 @@ export function LoginScreen() {
             {!forgotEmailSent && forgotEmailConfigured && !forgotEmailError && (
               <p className="text-xs text-amber-300/90">
                 Se este e-mail não estiver cadastrado em{" "}
-                <span className="text-accent">financiero-client.vercel.app</span>, nada será enviado.
-                Com <code className="text-amber-200">onboarding@resend.dev</code>, só chega no e-mail
-                da conta Resend.
+                <span className="text-accent">atlasinvest.site</span>, nada será enviado. Confira no
+                Render se <code className="text-amber-200">EMAIL_FROM</code> usa{" "}
+                <code className="text-amber-200">@atlasinvest.site</code> com domínio Verified na
+                Resend.
               </p>
             )}
             {devResetUrl ? (
@@ -159,7 +174,15 @@ export function LoginScreen() {
           </div>
         ) : (
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
-          {mode !== "reset" && (
+          {mode === "register-verify" && (
+            <div className="rounded-xl border border-accent/25 bg-accent/5 p-4 text-sm text-slate-300">
+              Código enviado para <span className="font-medium text-accent">{email}</span>
+              {devCode ? (
+                <p className="mt-2 font-mono text-lg text-accent">Dev: {devCode}</p>
+              ) : null}
+            </div>
+          )}
+          {mode !== "reset" && mode !== "register-verify" && (
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
                 E-mail
@@ -184,7 +207,24 @@ export function LoginScreen() {
               </ul>
             </div>
           )}
-          {mode !== "forgot" && (
+          {mode === "register-verify" && (
+            <div>
+              <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
+                Código de verificação
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                maxLength={6}
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ""))}
+                className="mt-1.5 w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-center font-mono text-2xl tracking-[0.4em] text-white outline-none ring-accent/40 focus:border-accent focus:ring-2"
+              />
+            </div>
+          )}
+          {mode !== "forgot" && mode !== "register-verify" && (
             <div>
               <label className="block text-xs font-medium uppercase tracking-wide text-slate-400">
                 {mode === "reset" ? "Nova senha" : "Senha (mín. 8 caracteres)"}
@@ -237,8 +277,10 @@ export function LoginScreen() {
               : mode === "login"
                 ? "Entrar"
                 : mode === "register"
-                  ? "Cadastrar"
-                  : mode === "forgot"
+                  ? "Enviar código"
+                  : mode === "register-verify"
+                    ? "Concluir cadastro"
+                    : mode === "forgot"
                     ? "Enviar link"
                     : "Salvar senha"}
           </motion.button>
@@ -277,7 +319,7 @@ export function LoginScreen() {
               </button>
             </>
           )}
-          {mode === "register" && (
+          {(mode === "register" || mode === "register-verify") && (
             <>
               Já tem conta?{" "}
               <button
@@ -286,6 +328,7 @@ export function LoginScreen() {
                 onClick={() => {
                   setMode("login");
                   setMessage(null);
+                  setSuccess(null);
                 }}
               >
                 Entrar

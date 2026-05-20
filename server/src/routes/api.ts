@@ -18,10 +18,12 @@ import {
   updateSavingsBox,
 } from "../lib/savingsBoxes.js";
 import { decimalToNumber, toISODate } from "../lib/serialize.js";
+import { requireSubscription } from "../middleware/requireSubscription.js";
 import { requireUser } from "../middleware/requireUser.js";
 
 const router = Router();
 router.use(requireUser);
+router.use(requireSubscription);
 
 async function serializeState(userId: string) {
   const [transactions, plans, investmentRows] = await Promise.all([

@@ -3,15 +3,26 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
 import { signUserToken, verifyUserToken } from "../lib/jwt.js";
-import { hashPassword, verifyPassword } from "../lib/password.js";
+import { verifyPassword } from "../lib/password.js";
 import { isEmailConfigured } from "../lib/email.js";
+import { startRegistration, verifyRegistrationAndCreateUser } from "../lib/emailVerification.js";
 import { createPasswordResetToken, resetPasswordWithToken } from "../lib/passwordReset.js";
+import { subscriptionPayload } from "../lib/subscription.js";
 
 function emailErrorForClient(error?: string): string | undefined {
   if (!error) return undefined;
   if (error.includes("RESEND_API_KEY")) return error;
   if (error.includes("only send testing emails")) {
     return "Modo teste Resend: só envia para o e-mail da sua conta Resend. Cadastre-se no app com esse e-mail ou verifique um domínio em resend.com/domains.";
+  }
+  const lower = error.toLowerCase();
+  if (
+    lower.includes("domain") ||
+    lower.includes("not verified") ||
+    lower.includes("from") ||
+    lower.includes("sender")
+  ) {
+    return `Remetente inválido ou domínio não verificado na Resend. Use EMAIL_FROM com @atlasinvest.site após o domínio ficar Verified. Detalhe: ${error}`;
   }
   return process.env.NODE_ENV !== "production" ? error : undefined;
 }
@@ -34,26 +45,65 @@ function authCookieOptions() {
   };
 }
 
-router.post("/register", async (req: Request, res: Response) => {
+const verifyCodeSchema = z.object({
+  email: z.string().email().max(255),
+  code: z.string().min(4).max(8),
+});
+
+router.post("/register-start", async (req: Request, res: Response) => {
   const parsed = credentialsSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "E-mail ou senha inválidos" });
     return;
   }
-  const email = parsed.data.email.trim().toLowerCase();
-  const exists = await prisma.user.findUnique({ where: { email } });
-  if (exists) {
-    res.status(409).json({ error: "E-mail já cadastrado" });
+  const result = await startRegistration(parsed.data.email, parsed.data.password);
+  if ("error" in result) {
+    res.status(409).json({ error: result.error });
     return;
   }
-  try {
-    const passwordHash = await hashPassword(parsed.data.password);
-    await prisma.user.create({ data: { email, passwordHash } });
-    res.status(201).json({ ok: true, email });
-  } catch (e) {
-    console.error("[register]", e);
-    res.status(500).json({ error: "Não foi possível criar a conta. Tente novamente." });
+  res.status(201).json({
+    ok: true,
+    email: parsed.data.email.trim().toLowerCase(),
+    emailSent: result.emailSent,
+    emailError: emailErrorForClient(result.emailError),
+    devCode: result.devCode,
+  });
+});
+
+router.post("/register-verify", async (req: Request, res: Response) => {
+  const parsed = verifyCodeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Código ou e-mail inválidos" });
+    return;
   }
+  const result = await verifyRegistrationAndCreateUser(parsed.data.email, parsed.data.code);
+  if ("error" in result) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.cookie("token", result.accessToken, authCookieOptions());
+  const user = await prisma.user.findUnique({
+    where: { id: result.user.id },
+    select: {
+      id: true,
+      email: true,
+      subscriptionStatus: true,
+      trialEndsAt: true,
+      subscriptionEndsAt: true,
+    },
+  });
+  res.status(201).json({
+    user: { id: result.user.id, email: result.user.email },
+    accessToken: result.accessToken,
+    subscription: user ? subscriptionPayload(user) : null,
+  });
+});
+
+/** Legado — use register-start + register-verify */
+router.post("/register", async (_req: Request, res: Response) => {
+  res.status(410).json({
+    error: "Cadastro em duas etapas: solicite o código em /auth/register-start e confirme em /auth/register-verify.",
+  });
 });
 
 const forgotSchema = z.object({ email: z.string().email().max(255) });
@@ -103,7 +153,17 @@ router.post("/login", async (req: Request, res: Response) => {
     return;
   }
   const email = parsed.data.email.trim().toLowerCase();
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      email: true,
+      passwordHash: true,
+      subscriptionStatus: true,
+      trialEndsAt: true,
+      subscriptionEndsAt: true,
+    },
+  });
   if (!user) {
     res.status(401).json({ error: "Credenciais inválidas" });
     return;
@@ -118,6 +178,7 @@ router.post("/login", async (req: Request, res: Response) => {
   res.json({
     user: { id: user.id, email: user.email },
     accessToken: token,
+    subscription: subscriptionPayload(user),
   });
 });
 
@@ -140,13 +201,22 @@ router.get("/me", async (req: Request, res: Response) => {
     const { sub } = verifyUserToken(token);
     const user = await prisma.user.findUnique({
       where: { id: sub },
-      select: { id: true, email: true },
+      select: {
+        id: true,
+        email: true,
+        subscriptionStatus: true,
+        trialEndsAt: true,
+        subscriptionEndsAt: true,
+      },
     });
     if (!user) {
       res.json({ user: null });
       return;
     }
-    res.json({ user });
+    res.json({
+      user: { id: user.id, email: user.email },
+      subscription: subscriptionPayload(user),
+    });
   } catch {
     res.json({ user: null });
   }

@@ -52,26 +52,81 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await r.json()) as T;
 }
 
-export type AuthUser = { id: string; email: string };
+export type SubscriptionInfo = {
+  status: "trial" | "active" | "expired";
+  trialEndsAt: string | null;
+  subscriptionEndsAt: string | null;
+  hasAccess: boolean;
+  minutesLeft: number | null;
+};
 
-export async function authMe(): Promise<{ user: AuthUser | null }> {
-  return request("/auth/me");
+export type AuthUser = {
+  id: string;
+  email: string;
+  subscription?: SubscriptionInfo | null;
+};
+
+export async function authMe(): Promise<{ user: AuthUser | null; subscription?: SubscriptionInfo | null }> {
+  const r = await request<{
+    user: { id: string; email: string } | null;
+    subscription?: SubscriptionInfo | null;
+  }>("/auth/me");
+  if (!r.user) return { user: null };
+  return {
+    user: { ...r.user, subscription: r.subscription ?? null },
+    subscription: r.subscription ?? null,
+  };
 }
 
 export async function authLogin(email: string, password: string): Promise<{ user: AuthUser }> {
-  const r = await request<{ user: AuthUser; accessToken: string }>("/auth/login", {
+  const r = await request<{
+    user: { id: string; email: string };
+    accessToken: string;
+    subscription?: SubscriptionInfo | null;
+  }>("/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
   setStoredAccessToken(r.accessToken);
-  return { user: r.user };
+  return {
+    user: { ...r.user, subscription: r.subscription ?? null },
+  };
 }
 
-export async function authRegister(email: string, password: string): Promise<{ ok: true; email: string }> {
-  return request("/auth/register", {
+export async function authRegisterStart(
+  email: string,
+  password: string
+): Promise<{
+  ok: boolean;
+  email: string;
+  emailSent?: boolean;
+  emailError?: string;
+  devCode?: string;
+}> {
+  return request("/auth/register-start", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
+}
+
+export async function authRegisterVerify(
+  email: string,
+  code: string
+): Promise<{ user: AuthUser; accessToken: string; subscription?: SubscriptionInfo | null }> {
+  const r = await request<{
+    user: { id: string; email: string };
+    accessToken: string;
+    subscription?: SubscriptionInfo | null;
+  }>("/auth/register-verify", {
+    method: "POST",
+    body: JSON.stringify({ email, code }),
+  });
+  setStoredAccessToken(r.accessToken);
+  return {
+    user: { ...r.user, subscription: r.subscription ?? null },
+    accessToken: r.accessToken,
+    subscription: r.subscription ?? null,
+  };
 }
 
 export async function authForgotPassword(email: string): Promise<{
@@ -241,4 +296,22 @@ export async function deletePlannedExpenseApi(id: string) {
   return request<PersistedState>(`/api/planned-expenses/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export async function billingPlans(): Promise<{
+  plans: { id: string; title: string; price: number; days: number }[];
+  stripeConfigured: boolean;
+}> {
+  return request("/api/billing/plans");
+}
+
+export async function billingCheckout(planId: string): Promise<{ checkoutUrl: string }> {
+  return request("/api/billing/checkout", {
+    method: "POST",
+    body: JSON.stringify({ planId }),
+  });
+}
+
+export async function billingStatus(): Promise<{ subscription: SubscriptionInfo }> {
+  return request("/api/billing/status");
 }

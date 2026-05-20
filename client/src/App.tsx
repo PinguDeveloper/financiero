@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { SavingsBoxesPanel } from "./components/SavingsBoxesPanel";
 import { MotionSection } from "./lib/motion";
@@ -8,9 +8,9 @@ import { DashboardExtendedCharts } from "./components/DashboardExtendedCharts";
 import { DashboardInsights } from "./components/DashboardInsights";
 import { InstallmentsPanel } from "./components/InstallmentsPanel";
 import { InvestmentsPanel } from "./components/InvestmentsPanel";
-import { LoginScreen } from "./components/LoginScreen";
 import { PageSkeleton } from "./components/PageSkeleton";
 import { StatCards } from "./components/StatCards";
+import { SubscriptionPaywall } from "./components/SubscriptionPaywall";
 import { TransactionTable } from "./components/TransactionTable";
 import { useAuth } from "./context/AuthContext";
 import {
@@ -34,29 +34,20 @@ const TAB_LABEL: Record<MainTab, string> = {
 };
 
 export default function App() {
-  const { ready, user } = useAuth();
-  if (!ready) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-surface px-4 text-slate-300">
-        <div
-          className="h-14 w-14 animate-spin rounded-full border-2 border-slate-600 border-t-accent shadow-lg shadow-accent/20"
-          aria-hidden
-        />
-        <p className="text-sm font-medium tracking-wide text-slate-400">Carregando seu painel…</p>
-      </div>
-    );
-  }
-  if (!user) {
-    return <LoginScreen />;
-  }
   return <FinanceShell />;
 }
 
 function FinanceShell() {
-  const { user, logout } = useAuth();
-  if (!user) {
-    return <LoginScreen />;
-  }
+  const { user, logout, subscription, refreshMe } = useAuth();
+  if (!user) return null;
+
+  const showPaywall = subscription && !subscription.hasAccess;
+
+  useEffect(() => {
+    if (subscription?.status !== "trial" || !subscription.hasAccess) return;
+    const id = window.setInterval(() => void refreshMe(), 30_000);
+    return () => clearInterval(id);
+  }, [subscription?.status, subscription?.hasAccess, refreshMe]);
   const {
     transactions,
     addTransaction,
@@ -108,6 +99,15 @@ function FinanceShell() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+      {showPaywall ? (
+        <SubscriptionPaywall subscription={subscription} onRefresh={refreshMe} />
+      ) : null}
+      {subscription?.status === "trial" && subscription.minutesLeft != null && subscription.hasAccess ? (
+        <p className="mb-6 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
+          Teste gratuito: {subscription.minutesLeft} min restante
+          {subscription.minutesLeft === 1 ? "" : "s"}.
+        </p>
+      ) : null}
       <header className="flex flex-col gap-8 border-b border-surface-border pb-10 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex-1">
           <p className="text-sm font-medium uppercase tracking-widest text-accent">
