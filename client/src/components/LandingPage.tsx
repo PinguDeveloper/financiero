@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
+import { useAuth } from "../context/AuthContext";
+import { UserAccountMenu } from "./UserAccountMenu";
 
 const PLANS = [
   {
@@ -12,8 +14,6 @@ const PLANS = [
       "Transações, parcelas e investimentos",
       "Ideal para conhecer a plataforma",
     ],
-    cta: "Começar grátis",
-    to: "/cadastro",
     highlight: false,
   },
   {
@@ -26,11 +26,9 @@ const PLANS = [
       "Suporte por e-mail",
       "Atualizações incluídas",
     ],
-    cta: "Assinar mensal",
-    to: "/cadastro",
     highlight: true,
   },
-];
+] as const;
 
 const BENEFITS = [
   {
@@ -51,7 +49,31 @@ const BENEFITS = [
   },
 ];
 
+function planCta(planId: (typeof PLANS)[number]["id"], loggedIn: boolean) {
+  if (!loggedIn) {
+    return {
+      label: planId === "trial" ? "Começar grátis" : "Criar conta e testar",
+      to: "/cadastro",
+      hint:
+        planId === "monthly"
+          ? "Primeiro o teste de 10 minutos; depois você assina por PIX."
+          : undefined,
+    };
+  }
+  if (planId === "trial") {
+    return { label: "Abrir meu painel", to: "/app", hint: undefined };
+  }
+  return {
+    label: "Ver assinatura no app",
+    to: "/app?tab=assinatura",
+    hint: "Pagamento PIX só dentro do app, após o teste.",
+  };
+}
+
 export function LandingPage() {
+  const { ready, user } = useAuth();
+  const loggedIn = Boolean(user);
+
   return (
     <div className="min-h-screen bg-surface text-slate-200">
       <header className="border-b border-surface-border bg-surface/80 backdrop-blur">
@@ -69,18 +91,34 @@ export function LandingPage() {
             <a href="#planos" className="hidden text-sm text-slate-400 hover:text-white sm:inline">
               Planos
             </a>
-            <Link
-              to="/login"
-              className="rounded-xl border border-surface-border px-4 py-2 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-white"
-            >
-              Entrar
-            </Link>
-            <Link
-              to="/cadastro"
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-accent/25 hover:opacity-90"
-            >
-              Criar conta
-            </Link>
+            {ready && loggedIn ? (
+              <>
+                <Link
+                  to="/app"
+                  className="hidden rounded-xl border border-surface-border px-4 py-2 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-white sm:inline"
+                >
+                  Meu painel
+                </Link>
+                <UserAccountMenu showAppLink />
+              </>
+            ) : ready ? (
+              <>
+                <Link
+                  to="/login"
+                  className="rounded-xl border border-surface-border px-4 py-2 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-white"
+                >
+                  Entrar
+                </Link>
+                <Link
+                  to="/cadastro"
+                  className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-accent/25 hover:opacity-90"
+                >
+                  Criar conta
+                </Link>
+              </>
+            ) : (
+              <div className="h-9 w-24 animate-pulse rounded-xl bg-surface-raised" />
+            )}
           </nav>
         </div>
       </header>
@@ -104,17 +142,19 @@ export function LandingPage() {
           </p>
           <div className="mt-10 flex flex-wrap gap-4">
             <Link
-              to="/cadastro"
+              to={loggedIn ? "/app" : "/cadastro"}
               className="rounded-xl bg-accent px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-accent/30 hover:opacity-90"
             >
-              Começar teste grátis
+              {loggedIn ? "Ir para o painel" : "Começar teste grátis"}
             </Link>
-            <Link
-              to="/login"
-              className="rounded-xl border border-surface-border bg-surface-raised px-8 py-3.5 text-base font-semibold text-slate-300 hover:border-slate-500 hover:text-white"
-            >
-              Já tenho conta
-            </Link>
+            {!loggedIn ? (
+              <Link
+                to="/login"
+                className="rounded-xl border border-surface-border bg-surface-raised px-8 py-3.5 text-base font-semibold text-slate-300 hover:border-slate-500 hover:text-white"
+              >
+                Já tenho conta
+              </Link>
+            ) : null}
           </div>
         </motion.div>
       </section>
@@ -157,43 +197,51 @@ export function LandingPage() {
             Planos
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-center text-slate-400">
-            Comece com o teste gratuito. Depois, pague com PIX e receba o código de liberação no seu e-mail.
+            {loggedIn
+              ? "Você já está logado. O pagamento PIX fica na aba Assinatura do app, após o teste."
+              : "Crie a conta, teste 10 minutos grátis e depois assine por PIX no app."}
           </p>
           <div className="mt-12 grid gap-8 sm:grid-cols-2 sm:max-w-3xl sm:mx-auto">
-            {PLANS.map((plan) => (
-              <div
-                key={plan.id}
-                className={`flex flex-col rounded-2xl border p-8 ${
-                  plan.highlight
-                    ? "border-accent/50 bg-accent/5 shadow-xl shadow-accent/10"
-                    : "border-surface-border bg-surface-raised"
-                }`}
-              >
-                <h3 className="font-display text-xl font-bold text-white">{plan.name}</h3>
-                <div className="mt-4">
-                  <p className="text-3xl font-bold text-white">{plan.price}</p>
-                  <p className="mt-1 text-sm text-slate-500">{plan.period}</p>
-                </div>
-                <ul className="mt-6 flex-1 space-y-3 text-sm text-slate-400">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex gap-2">
-                      <span className="text-accent">✓</span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  to={plan.to}
-                  className={`mt-8 block rounded-xl py-3 text-center text-sm font-semibold transition ${
+            {PLANS.map((plan) => {
+              const cta = planCta(plan.id, loggedIn);
+              return (
+                <div
+                  key={plan.id}
+                  className={`flex flex-col rounded-2xl border p-8 ${
                     plan.highlight
-                      ? "bg-accent text-white hover:opacity-90"
-                      : "border border-surface-border text-slate-300 hover:border-slate-500 hover:text-white"
+                      ? "border-accent/50 bg-accent/5 shadow-xl shadow-accent/10"
+                      : "border-surface-border bg-surface-raised"
                   }`}
                 >
-                  {plan.cta}
-                </Link>
-              </div>
-            ))}
+                  <h3 className="font-display text-xl font-bold text-white">{plan.name}</h3>
+                  <div className="mt-4">
+                    <p className="text-3xl font-bold text-white">{plan.price}</p>
+                    <p className="mt-1 text-sm text-slate-500">{plan.period}</p>
+                  </div>
+                  <ul className="mt-6 flex-1 space-y-3 text-sm text-slate-400">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex gap-2">
+                        <span className="text-accent">✓</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  {cta.hint ? (
+                    <p className="mt-4 text-xs text-slate-500">{cta.hint}</p>
+                  ) : null}
+                  <Link
+                    to={cta.to}
+                    className={`mt-6 block rounded-xl py-3 text-center text-sm font-semibold transition ${
+                      plan.highlight
+                        ? "bg-accent text-white hover:opacity-90"
+                        : "border border-surface-border text-slate-300 hover:border-slate-500 hover:text-white"
+                    }`}
+                  >
+                    {cta.label}
+                  </Link>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>

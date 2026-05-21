@@ -2,6 +2,11 @@ import type { Request, Response } from "express";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db.js";
+import {
+  clearAuthCookies,
+  readAuthTokenFromRequest,
+  setAuthCookie,
+} from "../lib/authCookie.js";
 import { signUserToken, verifyUserToken } from "../lib/jwt.js";
 import { verifyPassword } from "../lib/password.js";
 import { isEmailConfigured } from "../lib/email.js";
@@ -33,17 +38,6 @@ const credentialsSchema = z.object({
   email: z.string().email().max(255),
   password: z.string().min(8).max(128),
 });
-
-function authCookieOptions() {
-  const isProd = process.env.NODE_ENV === "production";
-  return {
-    httpOnly: true as const,
-    sameSite: isProd ? ("none" as const) : ("lax" as const),
-    secure: isProd,
-    maxAge: 14 * 24 * 60 * 60 * 1000,
-    path: "/",
-  };
-}
 
 const verifyCodeSchema = z.object({
   email: z.string().email().max(255),
@@ -81,7 +75,7 @@ router.post("/register-verify", async (req: Request, res: Response) => {
     res.status(400).json({ error: result.error });
     return;
   }
-  res.cookie("token", result.accessToken, authCookieOptions());
+  setAuthCookie(res, result.accessToken);
   const user = await prisma.user.findUnique({
     where: { id: result.user.id },
     select: {
@@ -170,7 +164,7 @@ router.post("/login", async (req: Request, res: Response) => {
     return;
   }
   const token = signUserToken(user.id);
-  res.cookie("token", token, authCookieOptions());
+  setAuthCookie(res, token);
   res.json({
     user: { id: user.id, email: user.email },
     accessToken: token,
@@ -179,16 +173,12 @@ router.post("/login", async (req: Request, res: Response) => {
 });
 
 router.post("/logout", (_req: Request, res: Response) => {
-  res.clearCookie("token", { path: "/" });
+  clearAuthCookies(res);
   res.json({ ok: true });
 });
 
 router.get("/me", async (req: Request, res: Response) => {
-  const token =
-    (req.cookies as Record<string, string | undefined> | undefined)?.token ??
-    (req.headers.authorization?.startsWith("Bearer ")
-      ? req.headers.authorization.slice(7)
-      : undefined);
+  const token = readAuthTokenFromRequest(req);
   if (!token) {
     res.json({ user: null });
     return;

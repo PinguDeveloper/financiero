@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { AppTopBar } from "./components/AppTopBar";
 import { AnimatePresence, motion } from "framer-motion";
 import { SavingsBoxesPanel } from "./components/SavingsBoxesPanel";
 import { MotionSection } from "./lib/motion";
@@ -39,11 +41,34 @@ export default function App() {
   return <FinanceShell />;
 }
 
+function parseMainTab(value: string | null): MainTab {
+  if (value === "parcelas" || value === "investimentos" || value === "assinatura" || value === "dashboard") {
+    return value;
+  }
+  return "dashboard";
+}
+
 function FinanceShell() {
-  const { user, logout, subscription, refreshMe } = useAuth();
+  const { user, subscription, refreshMe } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   if (!user) return null;
 
   const showPaywall = subscription && !subscription.hasAccess;
+
+  const initialTab = parseMainTab(searchParams.get("tab"));
+  const [tab, setTab] = useState<MainTab>(initialTab);
+
+  useEffect(() => {
+    setTab(parseMainTab(searchParams.get("tab")));
+  }, [searchParams]);
+
+  function selectTab(next: MainTab) {
+    setTab(next);
+    const nextParams = new URLSearchParams(searchParams);
+    if (next === "dashboard") nextParams.delete("tab");
+    else nextParams.set("tab", next);
+    setSearchParams(nextParams, { replace: true });
+  }
 
   useEffect(() => {
     if (subscription?.status !== "trial" || !subscription.hasAccess) return;
@@ -73,8 +98,6 @@ function FinanceShell() {
     error,
   } = useFinance();
 
-  const [tab, setTab] = useState<MainTab>("dashboard");
-
   const months = useMemo(() => {
     const m = availableMonths(transactions, investmentEntries);
     const cur = currentYearMonth();
@@ -101,6 +124,7 @@ function FinanceShell() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+      <AppTopBar />
       {showPaywall ? (
         <SubscriptionPaywall subscription={subscription} onRefresh={refreshMe} />
       ) : null}
@@ -120,9 +144,6 @@ function FinanceShell() {
           </h1>
           <p className="mt-2 max-w-xl text-slate-400">
             Organize entradas, saídas, parcelas e investimentos em um só lugar.
-          </p>
-          <p className="mt-2 text-xs text-slate-600">
-            Conectado como <span className="text-slate-400">{user.email}</span>
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
@@ -144,13 +165,6 @@ function FinanceShell() {
               </select>
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => void logout()}
-            className="rounded-xl border border-surface-border px-4 py-3 text-sm font-medium text-slate-400 transition hover:border-slate-500 hover:text-white"
-          >
-            Sair
-          </button>
         </div>
       </header>
 
@@ -168,7 +182,7 @@ function FinanceShell() {
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => selectTab(id)}
             className={`shrink-0 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
               tab === id
                 ? "bg-accent text-white shadow-lg shadow-accent/25"

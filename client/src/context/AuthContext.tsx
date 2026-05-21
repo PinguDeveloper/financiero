@@ -38,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    api.purgeLegacyStoredAuthTokens();
     let cancelled = false;
     (async () => {
       try {

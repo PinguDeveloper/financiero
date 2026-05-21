@@ -1,12 +1,9 @@
 import type { RequestHandler } from "express";
+import { readAuthTokenFromRequest } from "../lib/authCookie.js";
 import { verifyUserToken } from "../lib/jwt.js";
 
 function readToken(req: Parameters<RequestHandler>[0]): string | undefined {
-  const c = req.cookies as Record<string, string | undefined> | undefined;
-  if (c?.token) return c.token;
-  const h = req.headers.authorization;
-  if (h?.startsWith("Bearer ")) return h.slice(7);
-  return undefined;
+  return readAuthTokenFromRequest(req);
 }
 
 export const requireUser: RequestHandler = (req, res, next) => {

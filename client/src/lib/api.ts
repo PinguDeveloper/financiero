@@ -3,7 +3,25 @@ import type { PersistedState } from "../types";
 const base = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "";
 
 /** JWT em memória de aba: cookies cross-site (Vercel→API) costumam não ir; o servidor aceita Bearer. */
-const ACCESS_TOKEN_KEY = "fin_ctrl_access_token";
+const ACCESS_TOKEN_KEY = "atlas_invest_access_v3";
+const LEGACY_ACCESS_TOKEN_KEYS = ["fin_ctrl_access_token", "atlas_invest_access_v2"] as const;
+export function clearStoredAuthTokens(): void {
+  try {
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    for (const k of LEGACY_ACCESS_TOKEN_KEYS) sessionStorage.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Invalida sessões salvas antes da troca de chave (deploy). */
+export function purgeLegacyStoredAuthTokens(): void {
+  try {
+    for (const k of LEGACY_ACCESS_TOKEN_KEYS) sessionStorage.removeItem(k);
+  } catch {
+    /* ignore */
+  }
+}
 
 function getStoredAccessToken(): string | null {
   try {
@@ -46,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!r.ok) {
     const msg = await parseError(r);
-    if (r.status === 401 && bearer) setStoredAccessToken(null);
+    if (r.status === 401 && bearer) clearStoredAuthTokens();
     throw new Error(msg);
   }
   return (await r.json()) as T;
@@ -159,7 +177,7 @@ export async function authLogout(): Promise<void> {
   try {
     await request<{ ok: boolean }>("/auth/logout", { method: "POST" });
   } finally {
-    setStoredAccessToken(null);
+    clearStoredAuthTokens();
   }
 }
 
