@@ -12,9 +12,10 @@ model User {
   email              String               @unique
   passwordHash       String
   emailVerifiedAt    DateTime?
-  subscriptionStatus String               @default("trial")
-  trialEndsAt        DateTime?
-  subscriptionEndsAt DateTime?
+  subscriptionStatus   String               @default("trial")
+  trialEndsAt          DateTime?
+  subscriptionEndsAt   DateTime?
+  subscriptionStartedAt DateTime?
   createdAt          DateTime             @default(now())
   transactions       Transaction[]
   installmentPlans   InstallmentPlan[]
@@ -22,6 +23,34 @@ model User {
   savingsBoxes       SavingsBox[]
   plannedExpenses    PlannedExpense[]
   passwordResets     PasswordResetToken[]
+}
+
+model RedeemedVoucher {
+  code       String   @id
+  userId     String
+  redeemedAt DateTime @default(now())
+}
+
+/// Código único gerado e enviado por e-mail após confirmação do PIX
+model IssuedSubscriptionCode {
+  code              String    @id
+  email             String
+  days              Int
+  issuedAt          DateTime  @default(now())
+  redeemedAt        DateTime?
+  redeemedByUserId  String?
+}
+
+/// Cliente avisa que já pagou; admin envia o código por e-mail
+model VoucherCodeRequest {
+  id                  String    @id @default(uuid())
+  userId              String
+  email               String
+  status              String    @default("pending")
+  approveToken        String?   @unique
+  expectedAmountCents Int?
+  createdAt           DateTime  @default(now())
+  fulfilledAt         DateTime?
 }
 
 model PendingRegistration {

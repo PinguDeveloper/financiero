@@ -54,10 +54,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type SubscriptionInfo = {
   status: "trial" | "active" | "expired";
+  planLabel: string;
   trialEndsAt: string | null;
   subscriptionEndsAt: string | null;
+  accessStartedAt: string | null;
+  accessEndsAt: string | null;
   hasAccess: boolean;
   minutesLeft: number | null;
+  daysRemaining: number | null;
+  totalDays: number | null;
 };
 
 export type AuthUser = {
@@ -298,11 +303,51 @@ export async function deletePlannedExpenseApi(id: string) {
   });
 }
 
+export type ManualBillingInfo = {
+  mode: "manual";
+  price: number;
+  days: number;
+  pixKey: string;
+  pixRecipient: string;
+  contactUrl: string;
+  instructions: string;
+};
+
 export async function billingPlans(): Promise<{
+  mode: "manual" | "stripe";
   plans: { id: string; title: string; price: number; days: number }[];
   stripeConfigured: boolean;
+  manual: ManualBillingInfo | null;
 }> {
   return request("/api/billing/plans");
+}
+
+export type PixChargeInfo = {
+  amount: number;
+  amountCents: number;
+  copyPaste: string;
+  qrDataUrl: string;
+  recipient: string;
+  days: number;
+};
+
+export async function billingPixCharge(): Promise<PixChargeInfo> {
+  return request("/api/billing/pix-charge");
+}
+
+export async function billingRequestVoucherCode(): Promise<{ ok: boolean; message: string }> {
+  return request("/api/billing/request-voucher-code", { method: "POST" });
+}
+
+export async function billingRedeemVoucher(code: string): Promise<{
+  ok: boolean;
+  days: number;
+  subscription?: SubscriptionInfo | null;
+}> {
+  return request("/api/billing/redeem-voucher", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
 }
 
 export async function billingCheckout(planId: string): Promise<{ checkoutUrl: string }> {

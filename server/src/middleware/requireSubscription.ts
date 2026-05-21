@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { prisma } from "../db.js";
-import { subscriptionPayload } from "../lib/subscription.js";
+import { subscriptionPayload, subscriptionUserSelect } from "../lib/subscription.js";
 
 export const requireSubscription: RequestHandler = async (req, res, next) => {
   const userId = req.userId;
@@ -11,11 +11,7 @@ export const requireSubscription: RequestHandler = async (req, res, next) => {
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      subscriptionStatus: true,
-      trialEndsAt: true,
-      subscriptionEndsAt: true,
-    },
+    select: subscriptionUserSelect,
   });
 
   if (!user) {

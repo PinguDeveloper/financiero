@@ -103,19 +103,9 @@ export async function activateSubscriptionFromCheckout(
   userId: string,
   planId: BillingPlanId
 ): Promise<void> {
-  const { prisma } = await import("../db.js");
-  const { extendSubscriptionDays } = await import("./subscription.js");
+  const { activatePaidPlan } = await import("./manualBilling.js");
   const plan = BILLING_PLANS[planId];
-  const endsAt = extendSubscriptionDays(plan.days);
-
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      subscriptionStatus: "active",
-      subscriptionEndsAt: endsAt,
-      trialEndsAt: null,
-    },
-  });
+  await activatePaidPlan(userId, plan.days);
 }
 
 export function constructWebhookEvent(

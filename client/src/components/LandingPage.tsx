@@ -157,7 +157,7 @@ export function LandingPage() {
             Planos
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-center text-slate-400">
-            Comece com o teste gratuito. Depois, assine o plano mensal via Stripe.
+            Comece com o teste gratuito. Depois, pague com PIX e receba o código de liberação no seu e-mail.
           </p>
           <div className="mt-12 grid gap-8 sm:grid-cols-2 sm:max-w-3xl sm:mx-auto">
             {PLANS.map((plan) => (

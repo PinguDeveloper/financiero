@@ -7,7 +7,7 @@ import { verifyPassword } from "../lib/password.js";
 import { isEmailConfigured } from "../lib/email.js";
 import { startRegistration, verifyRegistrationAndCreateUser } from "../lib/emailVerification.js";
 import { createPasswordResetToken, resetPasswordWithToken } from "../lib/passwordReset.js";
-import { subscriptionPayload } from "../lib/subscription.js";
+import { subscriptionPayload, subscriptionUserSelect } from "../lib/subscription.js";
 
 function emailErrorForClient(error?: string): string | undefined {
   if (!error) return undefined;
@@ -87,9 +87,7 @@ router.post("/register-verify", async (req: Request, res: Response) => {
     select: {
       id: true,
       email: true,
-      subscriptionStatus: true,
-      trialEndsAt: true,
-      subscriptionEndsAt: true,
+      ...subscriptionUserSelect,
     },
   });
   res.status(201).json({
@@ -159,9 +157,7 @@ router.post("/login", async (req: Request, res: Response) => {
       id: true,
       email: true,
       passwordHash: true,
-      subscriptionStatus: true,
-      trialEndsAt: true,
-      subscriptionEndsAt: true,
+      ...subscriptionUserSelect,
     },
   });
   if (!user) {
@@ -204,9 +200,7 @@ router.get("/me", async (req: Request, res: Response) => {
       select: {
         id: true,
         email: true,
-        subscriptionStatus: true,
-        trialEndsAt: true,
-        subscriptionEndsAt: true,
+        ...subscriptionUserSelect,
       },
     });
     if (!user) {

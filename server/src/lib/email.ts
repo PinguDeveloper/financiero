@@ -98,6 +98,85 @@ export async function sendVerificationCodeEmail(
   }
 }
 
+export async function sendSubscriptionVoucherEmail(
+  to: string,
+  code: string,
+  days: number,
+  appUrl: string
+): Promise<{ sent: boolean; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) {
+    return { sent: false, error: "RESEND_API_KEY não configurada no servidor" };
+  }
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:32px">
+  <div style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:16px;padding:32px;border:1px solid #334155">
+  <p style="margin:0;font-size:12px;text-transform:uppercase;color:#60a5fa;letter-spacing:.1em">Atlas Invest</p>
+  <h1 style="color:#f8fafc;font-size:22px;margin:16px 0 8px">Seu código de liberação</h1>
+  <p style="color:#94a3b8;line-height:1.6">Obrigado pelo PIX. Use o código abaixo na aba <strong>Assinatura</strong> do app para ativar <strong>${days} dias</strong> de acesso.</p>
+  <p style="font-size:28px;font-weight:700;letter-spacing:6px;text-align:center;color:#3b82f6;margin:28px 0;font-family:monospace">${code}</p>
+  <p style="text-align:center;margin:0 0 20px"><a href="${appUrl}/app" style="display:inline-block;background:#3b82f6;color:#fff;text-decoration:none;font-weight:600;padding:12px 24px;border-radius:12px">Abrir o Atlas Invest</a></p>
+  <p style="color:#64748b;font-size:13px">O código é de uso único e vale apenas para este e-mail cadastrado.</p>
+  </div></body></html>`;
+
+  const resend = new Resend(apiKey);
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM,
+      to: [to],
+      subject: "Código de liberação — Atlas Invest",
+      html,
+      text: `Seu código Atlas Invest: ${code}\nAtiva ${days} dias de acesso. Cole na aba Assinatura: ${appUrl}/app`,
+    });
+    if (error) {
+      console.error("[email] Resend voucher:", error);
+      return { sent: false, error: error.message };
+    }
+    return { sent: true };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Falha ao enviar e-mail";
+    console.error("[email]", msg);
+    return { sent: false, error: msg };
+  }
+}
+
+export async function sendBillingAdminNotifyEmail(
+  adminTo: string,
+  userEmail: string,
+  approveUrl: string,
+  amountLabel: string
+): Promise<{ sent: boolean; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) {
+    return { sent: false, error: "RESEND_API_KEY não configurada" };
+  }
+  const resend = new Resend(apiKey);
+  const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:32px">
+  <div style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:16px;padding:32px;border:1px solid #334155">
+  <p style="margin:0;font-size:12px;text-transform:uppercase;color:#60a5fa">Atlas Invest · Admin</p>
+  <h1 style="color:#f8fafc;font-size:20px;margin:16px 0 8px">PIX para aprovar</h1>
+  <p style="color:#94a3b8;line-height:1.6"><strong>${userEmail}</strong> informou que já fez o PIX.</p>
+  <p style="color:#94a3b8">Valor esperado: <strong style="color:#e2e8f0">${amountLabel}</strong></p>
+  <p style="color:#64748b;font-size:14px">Confira no app do seu banco. Se entrou, clique abaixo para enviar o código de liberação ao e-mail do cliente.</p>
+  <p style="text-align:center;margin:28px 0"><a href="${approveUrl}" style="display:inline-block;background:#22c55e;color:#fff;text-decoration:none;font-weight:600;padding:14px 28px;border-radius:12px">Aprovar e enviar código</a></p>
+  <p style="color:#64748b;font-size:12px;word-break:break-all">${approveUrl}</p>
+  </div></body></html>`;
+
+  try {
+    const { error } = await resend.emails.send({
+      from: FROM,
+      to: [adminTo],
+      subject: `PIX pendente — ${userEmail} (${amountLabel})`,
+      html,
+      text: `${userEmail} pediu liberação após PIX (${amountLabel}). Aprove em: ${approveUrl}`,
+    });
+    if (error) return { sent: false, error: error.message };
+    return { sent: true };
+  } catch (e) {
+    return { sent: false, error: e instanceof Error ? e.message : "Falha ao enviar" };
+  }
+}
+
 export async function sendPasswordResetEmail(
   to: string,
   resetUrl: string

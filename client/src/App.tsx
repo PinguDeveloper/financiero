@@ -10,6 +10,7 @@ import { InstallmentsPanel } from "./components/InstallmentsPanel";
 import { InvestmentsPanel } from "./components/InvestmentsPanel";
 import { PageSkeleton } from "./components/PageSkeleton";
 import { StatCards } from "./components/StatCards";
+import { SubscriptionPanel } from "./components/SubscriptionPanel";
 import { SubscriptionPaywall } from "./components/SubscriptionPaywall";
 import { TransactionTable } from "./components/TransactionTable";
 import { useAuth } from "./context/AuthContext";
@@ -25,12 +26,13 @@ function currentYearMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
-type MainTab = "dashboard" | "parcelas" | "investimentos";
+type MainTab = "dashboard" | "parcelas" | "investimentos" | "assinatura";
 
 const TAB_LABEL: Record<MainTab, string> = {
   dashboard: "Painel",
   parcelas: "Parcelas",
   investimentos: "Investimentos",
+  assinatura: "Assinatura",
 };
 
 export default function App() {
@@ -280,6 +282,14 @@ function FinanceShell() {
                 onAdd={addInvestment}
                 onRemove={removeInvestment}
                 onSyncProventos={syncProventos}
+              />
+            )}
+
+            {tab === "assinatura" && (
+              <SubscriptionPanel
+                subscription={subscription}
+                email={user.email}
+                onRefresh={refreshMe}
               />
             )}
             </motion.div>
