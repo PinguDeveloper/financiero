@@ -84,6 +84,8 @@ Publique o conteúdo de `client/out` no diretório público do site. Se a Hostin
 
 Cadastre também a variável `NEXT_PUBLIC_API_BASE` com a URL pública da API no Render. Nesse modo, rewrites do Next não rodam na Hostinger; por isso o front precisa chamar a API diretamente pelo domínio do Render.
 
+Importante para SEO: páginas como `/ativos/PETR4` são dinâmicas e renderizadas no servidor pelo Next. A exportação estática da Hostinger comum não consegue gerar qualquer ticker sob demanda. Para indexar muitos ativos no Google, use Vercel, Render Web Service ou uma hospedagem Node/VPS na Hostinger para rodar `npm run start -w client` após `npm run build -w client`.
+
 ## 4. E-mail em produção (Resend + domínio do site na Vercel)
 
 O “esqueci a senha” só envia e-mail de verdade quando a Resend consegue enviar pelo **seu domínio**. O remetente de teste `onboarding@resend.dev` **não serve em produção** (só manda para o e-mail da sua conta Resend).

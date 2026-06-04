@@ -20,6 +20,7 @@ model User {
   transactions       Transaction[]
   installmentPlans   InstallmentPlan[]
   investmentEntries  InvestmentEntry[]
+  watchlistItems      WatchlistItem[]
   savingsBoxes       SavingsBox[]
   plannedExpenses    PlannedExpense[]
   passwordResets     PasswordResetToken[]
@@ -155,5 +156,17 @@ model InvestmentEntry {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+model WatchlistItem {
+  id        String   @id @default(uuid())
+  userId    String
+  ticker    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ticker])
   @@index([userId])
 }

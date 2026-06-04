@@ -459,4 +459,34 @@ router.get("/market/quote", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/watchlist", async (req: Request, res: Response) => {
+  const items = await prisma.watchlistItem.findMany({
+    where: { userId: req.userId! },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json({ tickers: items.map((item) => item.ticker) });
+});
+
+router.post("/watchlist/:ticker", async (req: Request, res: Response) => {
+  const ticker = req.params.ticker?.trim().toUpperCase().replace(/\s+/g, "") ?? "";
+  if (!/^[A-Z0-9]{4,12}$/.test(ticker)) {
+    res.status(400).json({ error: "Ticker inválido" });
+    return;
+  }
+  await prisma.watchlistItem.upsert({
+    where: { userId_ticker: { userId: req.userId!, ticker } },
+    update: {},
+    create: { userId: req.userId!, ticker },
+  });
+  res.status(201).json({ ok: true, ticker });
+});
+
+router.delete("/watchlist/:ticker", async (req: Request, res: Response) => {
+  const ticker = req.params.ticker?.trim().toUpperCase().replace(/\s+/g, "") ?? "";
+  await prisma.watchlistItem
+    .delete({ where: { userId_ticker: { userId: req.userId!, ticker } } })
+    .catch(() => null);
+  res.json({ ok: true, ticker });
+});
+
 export const apiRouter = router;

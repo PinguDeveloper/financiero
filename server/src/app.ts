@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import { apiRouter } from "./routes/api.js";
 import { authRouter } from "./routes/auth.js";
 import { billingRouter, handleStripeWebhook } from "./routes/billing.js";
+import { publicMarketRouter } from "./routes/publicMarket.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +64,7 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/auth", authRouter);
+  app.use("/api/public", publicMarketRouter);
   app.use("/api/billing", billingRouter);
   app.use("/api", apiRouter);
 

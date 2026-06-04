@@ -91,6 +91,8 @@ npm run build:hostinger
 
 3. Publique o conteúdo de `client/out` no Hostinger. Se o deploy estiver ligado ao GitHub, configure o build command como `npm install && npm run build:hostinger` dentro da pasta `client` e cadastre `NEXT_PUBLIC_API_BASE` nas variáveis do projeto.
 
+**SEO de ativos:** a rota `/ativos/[ticker]` é SSR no Next para permitir indexação real de páginas como `/ativos/PETR4`. Em hospedagem estática comum da Hostinger, rotas dinâmicas ilimitadas não rodam no servidor. Para tráfego orgânico, hospede o front em um ambiente Next.js com servidor (Vercel, Render Web Service, VPS/Node na Hostinger) e defina `API_INTERNAL_BASE` ou `NEXT_PUBLIC_API_BASE` apontando para a API do Render.
+
 O navegador precisa de CORS com `credentials: true`; a API já usa `CLIENT_ORIGIN` para refletir o domínio do front.
 
 ## Estrutura da API
