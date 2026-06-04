@@ -14,7 +14,19 @@
       "src": "/icons/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
@@ -22,6 +34,12 @@
       "name": "Abrir painel",
       "short_name": "Painel",
       "url": "/app",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Ativos",
+      "short_name": "Ativos",
+      "url": "/app?tab=ativos",
       "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
     },
     {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AssetAnalysisClient } from "../../../components/AssetAnalysisClient";
+import { allCatalogTickers } from "../../../data/b3TickerCatalog";
 import { fetchAssetForSsr } from "../../../lib/assetAnalysis";
 
 type Props = {
@@ -8,6 +9,11 @@ type Props = {
 };
 
 export const revalidate = 900;
+
+/** Pré-gera páginas no build estático (Hostinger). Tickers fora do catálogo: use a aba Ativos no app. */
+export function generateStaticParams() {
+  return allCatalogTickers().map((ticker) => ({ ticker }));
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { ticker } = await params;

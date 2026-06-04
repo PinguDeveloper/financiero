@@ -273,6 +273,18 @@ export async function syncProventosApi(): Promise<{
   return request("/api/investments/sync-proventos", { method: "POST" });
 }
 
+export async function fetchWatchlist(): Promise<{ tickers: string[] }> {
+  return request("/api/watchlist");
+}
+
+export async function addWatchlistTicker(ticker: string): Promise<{ ok: boolean; ticker: string }> {
+  return request(`/api/watchlist/${encodeURIComponent(ticker)}`, { method: "POST" });
+}
+
+export async function removeWatchlistTicker(ticker: string): Promise<{ ok: boolean; ticker: string }> {
+  return request(`/api/watchlist/${encodeURIComponent(ticker)}`, { method: "DELETE" });
+}
+
 export async function createSavingsBoxApi(input: { name: string; balance: number }) {
   return request<PersistedState>("/api/savings-boxes", {
     method: "POST",

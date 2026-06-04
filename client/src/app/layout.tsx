@@ -7,6 +7,10 @@ export const metadata: Metadata = {
   description: "Controle financeiro pessoal com gastos, parcelas, investimentos e caixinhas.",
   applicationName: "Atlas Invest",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/icons/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icons/icon.svg", type: "image/svg+xml" }],
+  },
   appleWebApp: {
     capable: true,
     title: "Atlas Invest",

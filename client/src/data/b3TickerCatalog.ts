@@ -250,6 +250,11 @@ function sortByPrefixThenAlpha(tickers: string[], q: string): string[] {
   return [...starts, ...includesOnly];
 }
 
+/** Todos os tickers do catálogo (para export estático Hostinger em /ativos/[ticker]). */
+export function allCatalogTickers(): string[] {
+  return [...new Set(Object.values(B3_TICKER_CATALOG).flat())];
+}
+
 export function mergeTickerSuggestions(
   assetType: string,
   query: string,

@@ -2,6 +2,7 @@
 
 import { StrictMode, useEffect } from "react";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { PwaInstallBanner } from "../components/PwaInstallBanner";
 import { AuthProvider } from "../context/AuthContext";
 
 function ServiceWorkerRegistration() {
@@ -21,6 +22,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <ErrorBoundary>
         <AuthProvider>
           <ServiceWorkerRegistration />
+          <div className="mx-auto max-w-6xl px-4 pt-4 sm:px-6 lg:px-8">
+            <PwaInstallBanner />
+          </div>
           {children}
         </AuthProvider>
       </ErrorBoundary>

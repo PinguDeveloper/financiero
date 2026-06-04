@@ -1,6 +1,29 @@
-# Publicar na Vercel (front) + Render (API)
+# Publicar na Hostinger (front) + Render (API)
 
-O repositório já está organizado em **`client/`** (Next.js/PWA) e **`server/`** (Node/Express). Você pode manter um único repositório no GitHub e apontar cada serviço para a pasta certa.
+Setup recomendado para este projeto hoje: **front estático na Hostinger** (`client/out`) e **API no Render**.
+
+O repositório está em **`client/`** (Next.js/PWA) e **`server/`** (Node/Express). Também há notas opcionais para Vercel no fim do doc.
+
+## Checklist Hostinger + Render (novas funções: aba Ativos, PWA, watchlist)
+
+1. **Render (API)** — redeploy com build que roda migrações:
+   - `npm install && npx prisma generate && npm run db:migrate && npm run build`
+   - Variáveis: `CLIENT_ORIGIN` = `https://seudominio.com` (e `https://www.seudominio.com` se usar www), `APP_PUBLIC_URL` = mesma URL do site, `JWT_SECRET`, `DATABASE_URL`, etc.
+   - **Não** use só `*.vercel.app` em `CLIENT_ORIGIN` se o site está na Hostinger.
+
+2. **Hostinger (front)** — novo build com a API embutida no bundle:
+   - Variável de build: `NEXT_PUBLIC_API_BASE` = `https://sua-api.onrender.com` (sem barra no final)
+   - Comando: `npm install && npm run build:hostinger` (pasta raiz do deploy: **`client`**)
+   - Publicar a pasta **`out`** (não `.next`)
+   - Após publicar: no celular, abra o site em HTTPS e force atualização (fechar aba / limpar cache do site)
+
+3. **Conferir no ar**
+   - `https://seudominio.com/app/` → abas: Painel, Parcelas, Investimentos, **Ativos**, Assinatura
+   - Banner “Instalar o Atlas Invest” no celular (iOS: Compartilhar → Adicionar à Tela de Início)
+   - `https://seudominio.com/manifest.webmanifest` e `https://seudominio.com/sw.js` devem abrir (PWA)
+
+4. **Limitação Hostinger estática**
+   - `/ativos/PETR4` só existe se o ticker foi pré-gerado no build (catálogo B3). Qualquer ticker funciona pela aba **Ativos** no app e pela API no Render.
 
 ## 1. Banco de dados (Render)
 

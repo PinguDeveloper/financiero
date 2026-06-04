@@ -9,6 +9,7 @@ import { ChartsSection, IncomeByCategoryMini } from "./components/ChartsSection"
 import { DashboardExtendedCharts } from "./components/DashboardExtendedCharts";
 import { DashboardInsights } from "./components/DashboardInsights";
 import { InstallmentsPanel } from "./components/InstallmentsPanel";
+import { AssetsTabPanel } from "./components/AssetsTabPanel";
 import { InvestmentsPanel } from "./components/InvestmentsPanel";
 import { PageSkeleton } from "./components/PageSkeleton";
 import { StatCards } from "./components/StatCards";
@@ -28,12 +29,13 @@ function currentYearMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
-type MainTab = "dashboard" | "parcelas" | "investimentos" | "assinatura";
+type MainTab = "dashboard" | "parcelas" | "investimentos" | "ativos" | "assinatura";
 
 const TAB_LABEL: Record<MainTab, string> = {
   dashboard: "Painel",
   parcelas: "Parcelas",
   investimentos: "Investimentos",
+  ativos: "Ativos",
   assinatura: "Assinatura",
 };
 
@@ -42,7 +44,13 @@ export default function App() {
 }
 
 function parseMainTab(value: string | null): MainTab {
-  if (value === "parcelas" || value === "investimentos" || value === "assinatura" || value === "dashboard") {
+  if (
+    value === "parcelas" ||
+    value === "investimentos" ||
+    value === "ativos" ||
+    value === "assinatura" ||
+    value === "dashboard"
+  ) {
     return value;
   }
   return "dashboard";
@@ -301,6 +309,8 @@ function FinanceShell() {
                 onSyncProventos={syncProventos}
               />
             )}
+
+            {tab === "ativos" && <AssetsTabPanel investmentEntries={investmentEntries} />}
 
             {tab === "assinatura" && (
               <SubscriptionPanel

@@ -1,0 +1,194 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { InvestmentEntry } from "../types";
+import * as api from "../lib/api";
+import { buildInvestmentPositions } from "../lib/investmentPositions";
+
+function normalizeTicker(raw: string): string {
+  return raw.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+type Props = {
+  investmentEntries: InvestmentEntry[];
+};
+
+export function AssetsTabPanel({ investmentEntries }: Props) {
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [addInput, setAddInput] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const portfolioTickers = useMemo(() => {
+    const positions = buildInvestmentPositions(investmentEntries);
+    return positions
+      .filter((p) => p.qty > 0)
+      .map((p) => normalizeTicker(p.assetName))
+      .filter((t) => /^[A-Z0-9]{4,12}$/.test(t))
+      .filter((t, i, arr) => arr.indexOf(t) === i)
+      .sort();
+  }, [investmentEntries]);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { tickers } = await api.fetchWatchlist();
+      setWatchlist(tickers);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao carregar watchlist");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function addTicker() {
+    const ticker = normalizeTicker(addInput);
+    if (!/^[A-Z0-9]{4,12}$/.test(ticker)) {
+      setError("Informe um ticker válido (ex.: PETR4, VALE3).");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.addWatchlistTicker(ticker);
+      setAddInput("");
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível adicionar");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeTicker(ticker: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.removeWatchlistTicker(ticker);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível remover");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-10">
+      <div>
+        <h2 className="font-display text-xl font-bold text-white">Ativos e análises</h2>
+        <p className="mt-2 max-w-2xl text-sm text-slate-400">
+          Acompanhe tickers na watchlist e abra a análise completa (cotação, dividendos, Atlas Score).
+          Páginas públicas também funcionam sem login — ex.:{" "}
+          <Link href="/ativos/PETR4" className="text-accent hover:underline">
+            /ativos/PETR4
+          </Link>
+          .
+        </p>
+      </div>
+
+      {error ? (
+        <p className="rounded-xl border border-expense/30 bg-expense/10 px-4 py-3 text-sm text-expense">
+          {error}
+        </p>
+      ) : null}
+
+      <section className="rounded-2xl border border-surface-border bg-surface-raised p-6 shadow-md shadow-black/15">
+        <h3 className="font-display text-base font-semibold text-white">Adicionar à watchlist</h3>
+        <p className="mt-1 text-xs text-slate-500">Tickers da B3 e ETFs listados (4 a 12 caracteres).</p>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <input
+            value={addInput}
+            onChange={(e) => setAddInput(e.target.value.toUpperCase())}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void addTicker();
+            }}
+            placeholder="Ex.: ITUB4"
+            className="min-w-0 flex-1 rounded-xl border border-surface-border bg-surface px-4 py-3 font-mono text-white outline-none ring-accent/30 focus:ring-2"
+            disabled={busy}
+          />
+          <button
+            type="button"
+            onClick={() => void addTicker()}
+            disabled={busy || !addInput.trim()}
+            className="shrink-0 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-accent/25 transition hover:opacity-90 disabled:opacity-50"
+          >
+            Adicionar
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-surface-border bg-surface-raised p-6 shadow-md shadow-black/15">
+        <h3 className="font-display text-base font-semibold text-white">
+          Minha watchlist{" "}
+          <span className="text-sm font-normal text-slate-500">({watchlist.length})</span>
+        </h3>
+        {loading ? (
+          <p className="mt-4 text-sm text-slate-500">Carregando…</p>
+        ) : watchlist.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500">
+            Nenhum ticker salvo. Adicione acima ou use &quot;Adicionar à watchlist&quot; na página de um ativo.
+          </p>
+        ) : (
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            {watchlist.map((ticker) => (
+              <li
+                key={ticker}
+                className="flex items-center justify-between gap-3 rounded-xl border border-surface-border bg-surface px-4 py-3"
+              >
+                <Link
+                  href={`/ativos/${ticker}`}
+                  className="font-mono text-sm font-semibold text-accent hover:underline"
+                >
+                  {ticker}
+                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/ativos/${ticker}`}
+                    className="rounded-lg border border-surface-border px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white"
+                  >
+                    Análise
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void removeTicker(ticker)}
+                    disabled={busy}
+                    className="rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-expense/10 hover:text-expense disabled:opacity-50"
+                    aria-label={`Remover ${ticker}`}
+                  >
+                    Remover
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {portfolioTickers.length > 0 ? (
+        <section className="rounded-2xl border border-surface-border bg-surface-raised p-6 shadow-md shadow-black/15">
+          <h3 className="font-display text-base font-semibold text-white">Da sua carteira</h3>
+          <p className="mt-1 text-xs text-slate-500">Posições abertas registradas em Investimentos.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {portfolioTickers.map((ticker) => (
+              <Link
+                key={ticker}
+                href={`/ativos/${ticker}`}
+                className="rounded-lg border border-surface-border bg-surface px-3 py-2 font-mono text-sm font-semibold text-slate-300 transition hover:border-accent/40 hover:text-white"
+              >
+                {ticker}
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}

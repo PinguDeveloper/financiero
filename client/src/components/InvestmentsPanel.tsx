@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
@@ -648,7 +649,12 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove, onSyncProv
                                 <td className="py-3 pr-4">
                                   <div className="flex items-center gap-3">
                                     <TickerIcon ticker={p.assetName} logoUrl={q?.logoUrl} />
-                                    <span className="font-mono font-medium text-white">{p.assetName}</span>
+                                    <Link
+                                      href={`/ativos/${encodeURIComponent(p.assetName.trim().toUpperCase())}`}
+                                      className="font-mono font-medium text-accent hover:underline"
+                                    >
+                                      {p.assetName}
+                                    </Link>
                                   </div>
                                 </td>
                                 <td className="py-3 pr-4 text-right tabular-nums text-slate-300">
@@ -690,7 +696,12 @@ export function InvestmentsPanel({ entries, summary, onAdd, onRemove, onSyncProv
                           >
                             <div className="flex items-center gap-3">
                               <TickerIcon ticker={p.assetName} logoUrl={q?.logoUrl} size="sm" />
-                              <span className="font-mono text-sm font-semibold text-white">{p.assetName}</span>
+                              <Link
+                                href={`/ativos/${encodeURIComponent(p.assetName.trim().toUpperCase())}`}
+                                className="font-mono text-sm font-semibold text-accent hover:underline"
+                              >
+                                {p.assetName}
+                              </Link>
                             </div>
                             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-slate-400">
                               <div>
