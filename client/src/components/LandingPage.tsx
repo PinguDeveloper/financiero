@@ -61,7 +61,7 @@ function planCta(planId: (typeof PLANS)[number]["id"], loggedIn: boolean) {
     };
   }
   if (planId === "trial") {
-    return { label: "Abrir meu painel", to: "/app", hint: undefined };
+    return { label: "Começar grátis", to: "/app", hint: undefined };
   }
   return {
     label: "Ver assinatura no app",
@@ -131,8 +131,7 @@ export function LandingPage() {
           className="max-w-3xl"
         >
           <p className="text-sm font-semibold uppercase tracking-widest text-accent">
-            Controle financeiro pessoal
-          </p>
+Atlas Invest | Controle Financeiro Pessoal e Investimentos          </p>
           <h1 className="mt-4 font-display text-4xl font-bold leading-tight text-white sm:text-5xl">
             Organize seu dinheiro com clareza e confiança
           </h1>

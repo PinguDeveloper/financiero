@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { InvestmentEntry } from "../types";
 import * as api from "../lib/api";
 import { buildInvestmentPositions } from "../lib/investmentPositions";
+import { mergeTickerSuggestions } from "../data/b3TickerCatalog";
 
 function normalizeTicker(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, "");
@@ -20,6 +21,7 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [addInput, setAddInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [suggestOpen, setSuggestOpen] = useState(false);
 
   const portfolioTickers = useMemo(() => {
     const positions = buildInvestmentPositions(investmentEntries);
@@ -30,6 +32,17 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
       .filter((t, i, arr) => arr.indexOf(t) === i)
       .sort();
   }, [investmentEntries]);
+
+  // Reutiliza mergeTickerSuggestions sem filtro de classe (string vazia = todos)
+  const suggestions = useMemo(
+    () =>
+      mergeTickerSuggestions(
+        "",
+        addInput,
+        investmentEntries.map((e) => ({ assetName: e.assetName, assetType: e.assetType }))
+      ),
+    [addInput, investmentEntries]
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -48,6 +61,11 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
     void refresh();
   }, [refresh]);
 
+  function pickTicker(ticker: string) {
+    setAddInput(ticker);
+    setSuggestOpen(false);
+  }
+
   async function addTicker() {
     const ticker = normalizeTicker(addInput);
     if (!/^[A-Z0-9]{4,12}$/.test(ticker)) {
@@ -56,6 +74,7 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
     }
     setBusy(true);
     setError(null);
+    setSuggestOpen(false);
     try {
       await api.addWatchlistTicker(ticker);
       setAddInput("");
@@ -104,16 +123,51 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
         <h3 className="font-display text-base font-semibold text-white">Adicionar à watchlist</h3>
         <p className="mt-1 text-xs text-slate-500">Tickers da B3 e ETFs listados (4 a 12 caracteres).</p>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <input
-            value={addInput}
-            onChange={(e) => setAddInput(e.target.value.toUpperCase())}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void addTicker();
-            }}
-            placeholder="Ex.: ITUB4"
-            className="min-w-0 flex-1 rounded-xl border border-surface-border bg-surface px-4 py-3 font-mono text-white outline-none ring-accent/30 focus:ring-2"
-            disabled={busy}
-          />
+          <div className="relative min-w-0 flex-1">
+            <input
+              autoComplete="off"
+              value={addInput}
+              onChange={(e) => {
+                setAddInput(e.target.value.toUpperCase());
+                setSuggestOpen(true);
+              }}
+              onFocus={() => setSuggestOpen(true)}
+              onBlur={() => window.setTimeout(() => setSuggestOpen(false), 180)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void addTicker();
+                if (e.key === "Escape") setSuggestOpen(false);
+              }}
+              placeholder="Ex.: ITUB4"
+              className="w-full rounded-xl border border-surface-border bg-surface px-4 py-3 font-mono text-white outline-none ring-accent/30 focus:ring-2"
+              disabled={busy}
+            />
+
+            {suggestOpen && suggestions.length > 0 && (
+              <ul
+                className="absolute left-0 right-0 top-full z-50 mt-1 max-h-52 overflow-auto rounded-xl border border-surface-border bg-surface-raised py-1 shadow-xl shadow-black/30"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {suggestions.map((ticker) => (
+                  <li key={ticker}>
+                    <button
+                      type="button"
+                      onClick={() => pickTicker(ticker)}
+                      className="w-full px-4 py-2.5 text-left font-mono text-sm text-slate-300 hover:bg-surface hover:text-white"
+                    >
+                      {ticker}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {suggestOpen && addInput.trim().length > 0 && suggestions.length === 0 && (
+              <p className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-surface-border bg-surface-raised px-4 py-3 text-xs text-slate-500 shadow-xl">
+                Nenhum ticker encontrado. Informe o código completo.
+              </p>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => void addTicker()}
@@ -192,3 +246,4 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
     </div>
   );
 }
+
