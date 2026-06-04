@@ -5,10 +5,11 @@ import { allCatalogTickers } from "../../../data/b3TickerCatalog";
 import { fetchAssetForSsr } from "../../../lib/assetAnalysis";
 
 type Props = {
-  params: Promise<{ ticker: string }>;
+  params: {
+    ticker: string;
+  };
 };
 
-export const dynamic = "force-dynamic";
 export const revalidate = 900;
 
 export function generateStaticParams() {
@@ -22,7 +23,7 @@ export function generateStaticParams() {
 export async function generateMetadata({
   params,
 }: Props): Promise<Metadata> {
-  const { ticker } = await params;
+  const { ticker } = params;
 
   if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
     return {
@@ -60,7 +61,7 @@ export async function generateMetadata({
 }
 
 export default async function AssetPage({ params }: Props) {
-  const { ticker } = await params;
+  const { ticker } = params;
 
   if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
     return <AssetPageClientOnly ticker={ticker.trim().toUpperCase()} />;
