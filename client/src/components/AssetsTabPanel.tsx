@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { InvestmentEntry } from "../types";
 import * as api from "../lib/api";
 import { buildInvestmentPositions } from "../lib/investmentPositions";
-import { mergeTickerSuggestions } from "../data/b3TickerCatalog";
+import {  allCatalogTickers } from "../data/b3TickerCatalog";
 
 function normalizeTicker(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, "");
@@ -34,15 +34,14 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
   }, [investmentEntries]);
 
   // Reutiliza mergeTickerSuggestions sem filtro de classe (string vazia = todos)
-  const suggestions = useMemo(
-    () =>
-      mergeTickerSuggestions(
-        "",
-        addInput,
-        investmentEntries.map((e) => ({ assetName: e.assetName, assetType: e.assetType }))
-      ),
-    [addInput, investmentEntries]
-  );
+  const suggestions = useMemo(() => {
+  if (addInput.trim().length < 2) return [];
+  const q = addInput.trim().toUpperCase();
+  const all = allCatalogTickers();
+  const starts = all.filter((t) => t.startsWith(q));
+  const contains = all.filter((t) => !t.startsWith(q) && t.includes(q));
+  return [...starts, ...contains].slice(0, 40);
+}, [addInput]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
