@@ -8,41 +8,73 @@ type Props = {
   params: Promise<{ ticker: string }>;
 };
 
+export const dynamic = "force-dynamic";
 export const revalidate = 900;
 
-/** Pré-gera páginas no build estático. No Render (sem API no build), gera só amostra. */
 export function generateStaticParams() {
   if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
-    return [{ ticker: "PETR4" }, { ticker: "VALE3" }, { ticker: "ITUB4" }];
+    return [];
   }
+
   return allCatalogTickers().map((ticker) => ({ ticker }));
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: Props): Promise<Metadata> {
   const { ticker } = await params;
-  const asset = await fetchAssetForSsr(ticker);
-  if (!asset) {
+
+  if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
+    return {
+      title: `${ticker.toUpperCase()} | Atlas Invest`,
+      description: `Análise de ${ticker.toUpperCase()} no Atlas Invest.`,
+    };
+  }
+
+  try {
+    const asset = await fetchAssetForSsr(ticker);
+
+    if (!asset) {
+      return {
+        title: `${ticker.toUpperCase()} | Atlas Invest`,
+      };
+    }
+
+    return {
+      title: `${asset.ticker} - ${asset.name} | Análise de ativos Atlas Invest`,
+      description: `Cotação, indicadores, dividendos, histórico, Atlas Score e análise fundamentalista de ${asset.ticker}.`,
+      alternates: {
+        canonical: `/ativos/${asset.ticker}`,
+      },
+      openGraph: {
+        title: `${asset.ticker} - ${asset.name}`,
+        description: `Análise completa de ${asset.ticker} com indicadores, dividendos e Atlas Score.`,
+        type: "article",
+      },
+    };
+  } catch {
     return {
       title: `${ticker.toUpperCase()} | Atlas Invest`,
     };
   }
-  return {
-    title: `${asset.ticker} - ${asset.name} | Análise de ativos Atlas Invest`,
-    description: `Cotação, indicadores, dividendos, histórico, Atlas Score e análise fundamentalista de ${asset.ticker}.`,
-    alternates: { canonical: `/ativos/${asset.ticker}` },
-    openGraph: {
-      title: `${asset.ticker} - ${asset.name}`,
-      description: `Análise completa de ${asset.ticker} com indicadores, dividendos e Atlas Score.`,
-      type: "article",
-    },
-  };
 }
 
 export default async function AssetPage({ params }: Props) {
   const { ticker } = await params;
-  const asset = await fetchAssetForSsr(ticker);
-  if (!asset) {
+
+  if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
     return <AssetPageClientOnly ticker={ticker.trim().toUpperCase()} />;
   }
-  return <AssetAnalysisClient asset={asset} />;
+
+  try {
+    const asset = await fetchAssetForSsr(ticker);
+
+    if (!asset) {
+      return <AssetPageClientOnly ticker={ticker.trim().toUpperCase()} />;
+    }
+
+    return <AssetAnalysisClient asset={asset} />;
+  } catch {
+    return <AssetPageClientOnly ticker={ticker.trim().toUpperCase()} />;
+  }
 }
