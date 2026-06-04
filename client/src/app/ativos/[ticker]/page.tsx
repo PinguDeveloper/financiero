@@ -5,7 +5,7 @@ import { allCatalogTickers } from "../../../data/b3TickerCatalog";
 import { fetchAssetForSsr } from "../../../lib/assetAnalysis";
 
 export const revalidate = 900;
-export const dynamicParams = false;
+export const dynamicParams = true;
 
 type Props = {
   params: Promise<{
