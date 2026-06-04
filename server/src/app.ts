@@ -93,8 +93,8 @@ export function createApp() {
         .send(
           `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"/><title>Serviço</title></head><body style="font-family:system-ui;max-width:36rem;margin:2rem auto;line-height:1.6;padding:0 1rem">
 <h1 style="font-size:1.25rem">Página em configuração</h1>
-<p style="color:#444">A interface ainda não está disponível neste endereço. Utilize o link fornecido pela sua equipe ou instituição.</p>
-<p style="color:#666;font-size:0.875rem">Se você administra este sistema, publique o build da interface e aponte a variável de ambiente <code>CLIENT_DIST</code> para a pasta correta.</p>
+<p style="color:#444">Este endereço é só a <strong>API</strong>. Abra o site na Hostinger (domínio do front). A interface não fica no Render quando o front é estático.</p>
+<p style="color:#666;font-size:0.875rem">Admin: front em <code>client/out</code> na Hostinger com <code>NEXT_PUBLIC_API_BASE</code> apontando para esta API. Opcional: servir o front pelo Render definindo <code>CLIENT_DIST</code> (não use com Hostinger).</p>
 <p><a href="/health">Verificar disponibilidade do serviço</a></p>
 </body></html>`
         );
