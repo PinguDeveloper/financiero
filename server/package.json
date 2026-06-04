@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "prisma generate && tsc",
+    "build": "prisma generate && tsc && node scripts/copy-client-out.mjs",
     "start": "node dist/index.js",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",

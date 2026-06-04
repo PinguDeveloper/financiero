@@ -2,9 +2,11 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-if (!process.env.NEXT_PUBLIC_API_BASE) {
+const apiBase = (process.env.NEXT_PUBLIC_API_BASE ?? "").trim();
+// No Render (RENDER=true), API e site no mesmo domínio: NEXT_PUBLIC_API_BASE pode ficar vazio.
+if (!apiBase && !process.env.RENDER) {
   console.error(
-    "Defina NEXT_PUBLIC_API_BASE com a URL da API no Render antes de gerar o build estatico."
+    "Defina NEXT_PUBLIC_API_BASE com a URL da API no Render antes de gerar o build estatico, ou use deploy no Render (mesmo dominio)."
   );
   process.exit(1);
 }

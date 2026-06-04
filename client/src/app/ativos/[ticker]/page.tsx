@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { AssetAnalysisClient } from "../../../components/AssetAnalysisClient";
+import { AssetPageClientOnly } from "../../../components/AssetPageClientOnly";
 import { allCatalogTickers } from "../../../data/b3TickerCatalog";
 import { fetchAssetForSsr } from "../../../lib/assetAnalysis";
 
@@ -10,8 +10,11 @@ type Props = {
 
 export const revalidate = 900;
 
-/** Pré-gera páginas no build estático (Hostinger). Tickers fora do catálogo: use a aba Ativos no app. */
+/** Pré-gera páginas no build estático. No Render (sem API no build), gera só amostra. */
 export function generateStaticParams() {
+  if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
+    return [{ ticker: "PETR4" }, { ticker: "VALE3" }, { ticker: "ITUB4" }];
+  }
   return allCatalogTickers().map((ticker) => ({ ticker }));
 }
 
@@ -38,6 +41,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function AssetPage({ params }: Props) {
   const { ticker } = await params;
   const asset = await fetchAssetForSsr(ticker);
-  if (!asset) notFound();
+  if (!asset) {
+    return <AssetPageClientOnly ticker={ticker.trim().toUpperCase()} />;
+  }
   return <AssetAnalysisClient asset={asset} />;
 }

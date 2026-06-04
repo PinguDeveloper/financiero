@@ -1,12 +1,18 @@
-# Blueprint Render — ajuste o nome do serviço se quiser.
-# No painel: conecte o repositório, confira "Root Directory" = server (ou use este arquivo).
+# Domínio na Hostinger (só DNS) → aponte @ e www para este serviço no Render.
+# Site + API no mesmo serviço: deixe NEXT_PUBLIC_API_BASE vazio no build.
 version: "1"
 services:
   - type: web
     name: controle-financeiro-api
     runtime: node
     rootDir: server
-    # Gera client/dist (interface) + server/dist (API) no mesmo serviço
-    buildCommand: cd .. && npm install --include=dev && VITE_API_BASE= npm run build -w client && cd server && npx prisma generate && npm run db:migrate && npm run build
+    buildCommand: cd .. && npm install --include=dev && SKIP_ASSET_STATIC_PAGES=1 npm run build:hostinger -w client && cd server && npx prisma generate && npm run db:migrate && npm run build
     startCommand: npm start
     healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: APP_PUBLIC_URL
+        sync: false

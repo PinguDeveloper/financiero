@@ -68,11 +68,14 @@ export function createApp() {
   app.use("/api/billing", billingRouter);
   app.use("/api", apiRouter);
 
-  const dist =
-    process.env.CLIENT_DIST?.trim() ||
-    path.join(__dirname, "..", "..", "client", "dist");
+  const distRaw =
+    process.env.CLIENT_DIST?.trim() || path.join(__dirname, "..", "static-app");
+  const dist = path.isAbsolute(distRaw)
+    ? distRaw
+    : path.resolve(path.join(__dirname, ".."), distRaw);
   const indexHtml = path.join(dist, "index.html");
   if (fs.existsSync(indexHtml)) {
+    console.log(`[static] Servindo interface em ${dist}`);
     app.use(express.static(dist));
     app.get(/^(?!\/api\/)(?!\/auth\/).*/, (req: Request, res: Response, next: NextFunction) => {
       if (req.method !== "GET") {
@@ -86,6 +89,7 @@ export function createApp() {
       res.sendFile(indexHtml);
     });
   } else {
+    console.warn(`[static] Interface não encontrada (${indexHtml}). Confira o build do client no deploy.`);
     app.get("/", (_req: Request, res: Response) => {
       res
         .status(503)
@@ -93,8 +97,8 @@ export function createApp() {
         .send(
           `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"/><title>Serviço</title></head><body style="font-family:system-ui;max-width:36rem;margin:2rem auto;line-height:1.6;padding:0 1rem">
 <h1 style="font-size:1.25rem">Página em configuração</h1>
-<p style="color:#444">Este endereço é só a <strong>API</strong>. Abra o site na Hostinger (domínio do front). A interface não fica no Render quando o front é estático.</p>
-<p style="color:#666;font-size:0.875rem">Admin: front em <code>client/out</code> na Hostinger com <code>NEXT_PUBLIC_API_BASE</code> apontando para esta API. Opcional: servir o front pelo Render definindo <code>CLIENT_DIST</code> (não use com Hostinger).</p>
+<p style="color:#444">A API está no ar, mas o <strong>build do site</strong> não foi publicado neste deploy.</p>
+<p style="color:#666;font-size:0.875rem">No Render, use Build Command: <code>cd .. &amp;&amp; npm install --include=dev &amp;&amp; npm run build:hostinger -w client &amp;&amp; cd server &amp;&amp; npx prisma generate &amp;&amp; npm run db:migrate &amp;&amp; npm run build</code>. Remova <code>CLIENT_DIST</code> antigo ou use <code>static-app</code> dentro de server.</p>
 <p><a href="/health">Verificar disponibilidade do serviço</a></p>
 </body></html>`
         );

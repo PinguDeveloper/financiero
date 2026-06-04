@@ -11,3 +11,4 @@ server/prisma/**/*.db-journal
 client/dist
 client/.next
 client/out
+server/static-app
