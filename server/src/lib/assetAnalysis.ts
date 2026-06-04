@@ -1,4 +1,10 @@
-export type AssetKind = "stock" | "fii";
+export type AssetKind =
+  | "stock"
+  | "fii"
+  | "etf"
+  | "bdr"
+  | "us_stock"
+  | "crypto";
 
 export type AssetIndicator = {
   key: string;
@@ -181,14 +187,32 @@ async function brapiJson<T>(path: string, params: Record<string, string>): Promi
 }
 
 // ---------------------------------------------------------------------------
-// Yahoo Finance — histórico de preços (gratuito, sem token, suporta 1y/5y/max)
+// FIX 1: yahooSymbol movida para top-level (era declarada dentro de fetchHistoryFromYahoo)
 // ---------------------------------------------------------------------------
-async function fetchHistoryFromYahoo(ticker: string, range: string): Promise<AssetHistoryPoint[]> {
+function yahooSymbol(ticker: string, kind: AssetKind): string {
+  switch (kind) {
+    case "us_stock":
+      return ticker;
+    case "crypto":
+      return `${ticker}-USD`;
+    default:
+      return `${ticker}.SA`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Yahoo Finance — histórico de preços (gratuito, sem token, suporta 1y/5y/max)
+// FIX 2: assinatura agora recebe `kind` (era chamada com 3 args mas só aceitava 2)
+// ---------------------------------------------------------------------------
+async function fetchHistoryFromYahoo(
+  ticker: string,
+  kind: AssetKind,
+  range: string
+): Promise<AssetHistoryPoint[]> {
   const cacheKey = `yahoo:${ticker}:${range}`;
   const cached = getCached<AssetHistoryPoint[]>(cacheKey);
   if (cached) return cached;
 
-  // Mapeia ranges do sistema para o formato do Yahoo
   const rangeMap: Record<string, string> = {
     "1d": "1d",
     "5d": "5d",
@@ -201,7 +225,8 @@ async function fetchHistoryFromYahoo(ticker: string, range: string): Promise<Ass
   };
   const yahooRange = rangeMap[range] ?? "1y";
   const interval = range === "1d" ? "5m" : "1d";
-  const symbol = `${ticker}.SA`;
+
+  const symbol = yahooSymbol(ticker, kind);
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${yahooRange}&interval=${interval}`;
 
   try {
@@ -250,14 +275,17 @@ async function fetchHistoryFromYahoo(ticker: string, range: string): Promise<Ass
 }
 
 // ---------------------------------------------------------------------------
-// Histórico: tenta Yahoo primeiro, fallback para brapi (range limitado a 3mo)
+// Histórico: tenta Yahoo primeiro, fallback para brapi
 // ---------------------------------------------------------------------------
-async function fetchHistory(ticker: string, range: string, brapiHistorical: unknown): Promise<AssetHistoryPoint[]> {
-  // 1. Tenta Yahoo Finance (suporta qualquer range, gratuito)
-  const yahooPoints = await fetchHistoryFromYahoo(ticker, range);
+async function fetchHistory(
+  ticker: string,
+  kind: AssetKind,
+  range: string,
+  brapiHistorical: unknown
+): Promise<AssetHistoryPoint[]> {
+  const yahooPoints = await fetchHistoryFromYahoo(ticker, kind, range);
   if (yahooPoints.length > 0) return yahooPoints;
 
-  // 2. Fallback: usa o que a brapi retornou (pode ser vazio se range não suportado)
   console.warn(`Yahoo falhou para ${ticker}, usando brapi como fallback`);
   return normalizeHistory(brapiHistorical);
 }
@@ -330,9 +358,34 @@ function annualFromBrapi(first: Record<string, unknown>): AssetAnnualResult[] {
   return [...byYear.values()].sort((a, b) => a.year.localeCompare(b.year)).slice(-8);
 }
 
-function classifyKind(ticker: string, first: Record<string, unknown>): AssetKind {
-  const quoteType = firstString(first.quoteType, first.typeDisp, first.longBusinessSummary)?.toLowerCase() ?? "";
-  if (ticker.endsWith("11") || quoteType.includes("fund") || quoteType.includes("fii")) return "fii";
+// ---------------------------------------------------------------------------
+// FIX 3: classifyKind limpa — removido o bloco duplicado inline em fetchAssetAnalysis
+// ---------------------------------------------------------------------------
+function classifyKind(ticker: string, first?: Record<string, unknown>): AssetKind {
+  const quoteType =
+    firstString(
+      first?.quoteType,
+      first?.assetType,
+      first?.typeDisp,
+      first?.longBusinessSummary
+    )?.toLowerCase() ?? "";
+
+  const t = ticker.toUpperCase();
+
+  const cryptos = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "BNB", "AVAX"];
+  if (cryptos.includes(t)) return "crypto";
+
+  const etfs = ["BOVA11", "IVVB11", "SMAL11", "HASH11", "DIVO11", "XFIX11", "GOVE11", "BOVV11", "SPXI11", "NASD11"];
+  if (etfs.includes(t) || quoteType.includes("etf")) return "etf";
+
+  if (t.endsWith("34") || t.endsWith("35") || t.endsWith("39")) return "bdr";
+
+  const fiiPattern = /^[A-Z]{4}11$/;
+  if (fiiPattern.test(t) && !etfs.includes(t)) return "fii";
+  if (quoteType.includes("fii") || quoteType.includes("fund") || quoteType.includes("real estate")) return "fii";
+
+  if (/^[A-Z]{1,5}$/.test(t) && !/\d/.test(t)) return "us_stock";
+
   return "stock";
 }
 
@@ -351,7 +404,8 @@ function buildIndicators(kind: AssetKind, first: Record<string, unknown>): Asset
   const liquidity = firstNumber(first.averageDailyVolume10Day, first.averageDailyVolume3Month, summary.averageVolume);
   const equity = firstNumber(first.equity, first.netWorth, stats.bookValue);
   const vpc = firstNumber(first.bookValue, stats.bookValue);
-  if (kind === "fii") {
+
+  if (kind === "fii" || kind === "etf") {
     return [
       { key: "pvp", label: "P/VP", value: pvp, unit: "number" },
       { key: "dy", label: "Dividend Yield", value: dy != null && dy <= 1 ? dy * 100 : dy, unit: "percent" },
@@ -376,7 +430,12 @@ function indicatorValue(indicators: AssetIndicator[], key: string): number | nul
   return indicators.find((i) => i.key === key)?.value ?? null;
 }
 
-function calculateScore(kind: AssetKind, indicators: AssetIndicator[], annual: AssetAnnualResult[], dy12m: number | null) {
+function calculateScore(
+  kind: AssetKind,
+  indicators: AssetIndicator[],
+  annual: AssetAnnualResult[],
+  dy12m: number | null
+) {
   const pe = indicatorValue(indicators, "pe");
   const pvp = indicatorValue(indicators, "pvp");
   const roe = indicatorValue(indicators, "roe");
@@ -391,17 +450,30 @@ function calculateScore(kind: AssetKind, indicators: AssetIndicator[], annual: A
       ? ((lastRevenue / firstRevenue) ** (1 / Math.max(annual.length - 1, 1)) - 1) * 100
       : null;
   const valuation =
-    kind === "fii" ? average([scoreLower(pvp, 0.9, 1.4)]) : average([scoreLower(pe, 8, 28), scoreLower(pvp, 1, 4)]);
+    kind === "fii"
+      ? average([scoreLower(pvp, 0.9, 1.4)])
+      : average([scoreLower(pe, 8, 28), scoreLower(pvp, 1, 4)]);
   const profitability =
-    kind === "fii" ? average([scoreHigher(dy, 8, 3)]) : average([scoreHigher(roe, 18, 4), scoreHigher(roic, 14, 3), scoreHigher(margin, 15, 2)]);
+    kind === "fii"
+      ? average([scoreHigher(dy, 8, 3)])
+      : average([scoreHigher(roe, 18, 4), scoreHigher(roic, 14, 3), scoreHigher(margin, 15, 2)]);
   const growth = scoreHigher(growthPct, 12, -3);
   const dividends = scoreHigher(dy, kind === "fii" ? 10 : 7, 1);
-  const financialHealth = kind === "fii" ? average([scoreHigher(indicatorValue(indicators, "liquidity"), 1_000_000, 50_000)]) : scoreLower(debt, 1.5, 4);
+  const financialHealth =
+    kind === "fii"
+      ? average([scoreHigher(indicatorValue(indicators, "liquidity"), 1_000_000, 50_000)])
+      : scoreLower(debt, 1.5, 4);
   const total = average([valuation, profitability, growth, dividends, financialHealth]);
   return { total, valuation, profitability, growth, dividends, financialHealth };
 }
 
-function textAnalysis(kind: AssetKind, indicators: AssetIndicator[], score: AssetAnalysis["atlasScore"], dy12m: number | null, annual: AssetAnnualResult[]) {
+function textAnalysis(
+  kind: AssetKind,
+  indicators: AssetIndicator[],
+  score: AssetAnalysis["atlasScore"],
+  dy12m: number | null,
+  annual: AssetAnnualResult[]
+) {
   const pe = indicatorValue(indicators, "pe");
   const pvp = indicatorValue(indicators, "pvp");
   const roe = indicatorValue(indicators, "roe");
@@ -483,71 +555,74 @@ function newsFor(ticker: string, name: string): AssetNews[] {
 
 export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promise<AssetAnalysis | null> {
   const ticker = tickerRaw.trim().toUpperCase().replace(/\s+/g, "");
-  if (!/^[A-Z0-9]{4,12}$/.test(ticker)) return null;
+  if (!/^[A-Z0-9]{2,15}$/.test(ticker)) return null;
 
-  // brapi: usa range limitado ao plano gratuito para dados fundamentais
-  // O histórico de preços virá do Yahoo Finance (sem limitação de range)
   const brapiRange = ["1d", "5d", "1mo", "3mo"].includes(range) ? range : "3mo";
 
- // Detecta FIIs
-const isFii = ticker.endsWith("11");
+  // FIX 4: isFii, isEtf e kind declarados corretamente com base em classifyKind
+  const detectedKind = classifyKind(ticker);
+  const isFii = detectedKind === "fii";
+  const isEtf = detectedKind === "etf";
 
-let data: {
-  results?: Array<Record<string, unknown>>;
-} | null = null;
+  let data: { results?: Array<Record<string, unknown>> } | null = null;
 
-// FIIs: usa apenas dados gratuitos
-if (isFii) {
-  console.log(`Consultando FII ${ticker} usando endpoint gratuito`);
-
-  data = await brapiJson<{
-    results?: Array<Record<string, unknown>>;
-  }>(`quote/${encodeURIComponent(ticker)}`, {
-    range: brapiRange,
-    interval: brapiRange === "1d" ? "5m" : "1d",
-  });
-} else {
-  // Ações: tenta módulos completos
-  data = await brapiJson<{
-    results?: Array<Record<string, unknown>>;
-  }>(`quote/${encodeURIComponent(ticker)}`, {
-    range: brapiRange,
-    interval: brapiRange === "1d" ? "5m" : "1d",
-    fundamental: "true",
-    dividends: "true",
-    modules:
-      "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",
-  });
-
-  // Fallback gratuito
-  if (!data?.results?.[0]) {
-    console.warn(
-      `Módulos completos indisponíveis para ${ticker}, tentando modo gratuito`
+  if (isFii || isEtf) {
+    console.log(`Consultando ${detectedKind.toUpperCase()} ${ticker} usando endpoint gratuito`);
+    data = await brapiJson<{ results?: Array<Record<string, unknown>> }>(
+      `quote/${encodeURIComponent(ticker)}`,
+      {
+        range: brapiRange,
+        interval: brapiRange === "1d" ? "5m" : "1d",
+      }
+    );
+  } else {
+    data = await brapiJson<{ results?: Array<Record<string, unknown>> }>(
+      `quote/${encodeURIComponent(ticker)}`,
+      {
+        range: brapiRange,
+        interval: brapiRange === "1d" ? "5m" : "1d",
+        fundamental: "true",
+        dividends: "true",
+        modules:
+          "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",
+      }
     );
 
-    data = await brapiJson<{
-      results?: Array<Record<string, unknown>>;
-    }>(`quote/${encodeURIComponent(ticker)}`, {
-      range: brapiRange,
-      interval: brapiRange === "1d" ? "5m" : "1d",
-      modules: "summaryProfile",
-    });
+    if (!data?.results?.[0]) {
+      console.warn(`Módulos completos indisponíveis para ${ticker}, tentando módulo summaryProfile`);
+      data = await brapiJson<{ results?: Array<Record<string, unknown>> }>(
+        `quote/${encodeURIComponent(ticker)}`,
+        {
+          range: brapiRange,
+          interval: brapiRange === "1d" ? "5m" : "1d",
+          modules: "summaryProfile",
+        }
+      );
+    }
+
+    // Fallback gratuito
+    if (!data?.results?.[0]) {
+      console.warn(`summaryProfile indisponível para ${ticker}, tentando modo gratuito`);
+      data = await brapiJson<{ results?: Array<Record<string, unknown>> }>(
+        `quote/${encodeURIComponent(ticker)}`,
+        {
+          range: brapiRange,
+          interval: brapiRange === "1d" ? "5m" : "1d",
+        }
+      );
+    }
   }
-}
 
   const first = data?.results?.[0];
   console.log("DATA RECEBIDA:", JSON.stringify(data, null, 2));
+  console.log("FIRST:", { ticker, existe: !!first, symbol: first?.symbol, shortName: first?.shortName });
 
-console.log("FIRST:", {
-  ticker,
-  existe: !!first,
-  symbol: first?.symbol,
-  shortName: first?.shortName,
-});
- if (!first) {
-  console.error(`Nenhum resultado encontrado para ${ticker}`);
-  return null;
-}
+  if (!first) {
+    console.error(`Nenhum resultado encontrado para ${ticker}`);
+    return null;
+  }
+
+  // FIX 5: kind final calculado agora com `first` disponível para refinar a classificação
   const kind = classifyKind(ticker, first);
   const name = firstString(first.longName, first.shortName, first.symbol) ?? ticker;
   const sector = firstString(first.sector, (first.summaryProfile as Record<string, unknown> | undefined)?.sector);
@@ -564,8 +639,8 @@ console.log("FIRST:", {
   const annualResults = annualFromBrapi(first);
   const atlasScore = calculateScore(kind, indicators, annualResults, dividendYield12m);
 
-  // Histórico: Yahoo Finance (1y, 5y, max) com fallback para brapi
-  const history = await fetchHistory(ticker, range, first.historicalDataPrice);
+  // FIX 4 (cont.): fetchHistory chamada com todos os 4 parâmetros corretos
+  const history = await fetchHistory(ticker, kind, range, first.historicalDataPrice);
 
   return {
     ticker,
