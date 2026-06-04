@@ -489,7 +489,8 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   // O histórico de preços virá do Yahoo Finance (sem limitação de range)
   const brapiRange = ["1d", "5d", "1mo", "3mo"].includes(range) ? range : "3mo";
 
-  const data = await brapiJson<{
+  // Tenta com módulos completos (plano pago); se falhar, tenta só com summaryProfile (plano gratuito)
+  let data = await brapiJson<{
     results?: Array<Record<string, unknown>>;
   }>(`quote/${encodeURIComponent(ticker)}`, {
     range: brapiRange,
@@ -498,6 +499,20 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     dividends: "true",
     modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",
   });
+
+  // Fallback: plano gratuito só permite summaryProfile
+  if (!data?.results?.[0]) {
+    console.warn(`Módulos completos indisponíveis para ${ticker}, tentando com summaryProfile apenas`);
+    data = await brapiJson<{
+      results?: Array<Record<string, unknown>>;
+    }>(`quote/${encodeURIComponent(ticker)}`, {
+      range: brapiRange,
+      interval: brapiRange === "1d" ? "5m" : "1d",
+      fundamental: "true",
+      dividends: "true",
+      modules: "summaryProfile",
+    });
+  }
 
   const first = data?.results?.[0];
   if (!first) return null;
