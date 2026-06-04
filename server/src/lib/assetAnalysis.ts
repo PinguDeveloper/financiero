@@ -158,39 +158,110 @@ function average(values: number[]): number {
 
 async function brapiJson<T>(path: string, params: Record<string, string>): Promise<T | null> {
   const token = process.env.BRAPI_TOKEN?.trim();
-
   const qs = new URLSearchParams(params);
-
-  if (token) {
-    qs.set("token", token);
-  }
-
+  if (token) qs.set("token", token);
   const url = `https://brapi.dev/api/${path}?${qs}`;
-
   const cached = getCached<T>(url);
   if (cached) return cached;
-
   try {
     const res = await fetch(url, { headers });
-
     console.log("BRAPI URL:", url);
     console.log("BRAPI STATUS:", res.status);
-
     if (!res.ok) {
       console.error("BRAPI ERROR:", await res.text());
       return null;
     }
-
     const json = (await res.json()) as T;
-
     console.log("BRAPI SUCCESS");
-
     return setCached(url, json);
   } catch (err) {
     console.error("BRAPI FETCH ERROR:", err);
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Yahoo Finance — histórico de preços (gratuito, sem token, suporta 1y/5y/max)
+// ---------------------------------------------------------------------------
+async function fetchHistoryFromYahoo(ticker: string, range: string): Promise<AssetHistoryPoint[]> {
+  const cacheKey = `yahoo:${ticker}:${range}`;
+  const cached = getCached<AssetHistoryPoint[]>(cacheKey);
+  if (cached) return cached;
+
+  // Mapeia ranges do sistema para o formato do Yahoo
+  const rangeMap: Record<string, string> = {
+    "1d": "1d",
+    "5d": "5d",
+    "1mo": "1mo",
+    "3mo": "3mo",
+    "6mo": "6mo",
+    "1y": "1y",
+    "5y": "5y",
+    "max": "max",
+  };
+  const yahooRange = rangeMap[range] ?? "1y";
+  const interval = range === "1d" ? "5m" : "1d";
+  const symbol = `${ticker}.SA`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${yahooRange}&interval=${interval}`;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        ...headers,
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+    });
+    console.log("YAHOO URL:", url);
+    console.log("YAHOO STATUS:", res.status);
+    if (!res.ok) {
+      console.error("YAHOO ERROR:", res.status);
+      return [];
+    }
+    const json = (await res.json()) as {
+      chart?: {
+        result?: Array<{
+          timestamp?: number[];
+          indicators?: { quote?: Array<{ close?: (number | null)[] }> };
+        }>;
+        error?: unknown;
+      };
+    };
+
+    const result = json?.chart?.result?.[0];
+    if (!result) return [];
+
+    const timestamps = result.timestamp ?? [];
+    const closes = result.indicators?.quote?.[0]?.close ?? [];
+
+    const points = timestamps
+      .map((ts, i) => ({
+        date: new Date(ts * 1000).toISOString().slice(0, 10),
+        close: closes[i] ?? null,
+      }))
+      .filter((p): p is AssetHistoryPoint => p.close != null && p.close > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    console.log("YAHOO SUCCESS:", points.length, "pontos");
+    return setCached(cacheKey, points);
+  } catch (err) {
+    console.error("YAHOO FETCH ERROR:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Histórico: tenta Yahoo primeiro, fallback para brapi (range limitado a 3mo)
+// ---------------------------------------------------------------------------
+async function fetchHistory(ticker: string, range: string, brapiHistorical: unknown): Promise<AssetHistoryPoint[]> {
+  // 1. Tenta Yahoo Finance (suporta qualquer range, gratuito)
+  const yahooPoints = await fetchHistoryFromYahoo(ticker, range);
+  if (yahooPoints.length > 0) return yahooPoints;
+
+  // 2. Fallback: usa o que a brapi retornou (pode ser vazio se range não suportado)
+  console.warn(`Yahoo falhou para ${ticker}, usando brapi como fallback`);
+  return normalizeHistory(brapiHistorical);
+}
+
 function normalizeHistory(rows: unknown): AssetHistoryPoint[] {
   if (!Array.isArray(rows)) return [];
   return rows
@@ -233,7 +304,6 @@ function annualFromBrapi(first: Record<string, unknown>): AssetAnnualResult[] {
   const balance = ((first.balanceSheetHistory as Record<string, unknown> | undefined)
     ?.balanceSheetStatements ?? []) as unknown[];
   const byYear = new Map<string, AssetAnnualResult>();
-
   for (const row of income) {
     if (!row || typeof row !== "object") continue;
     const r = row as Record<string, unknown>;
@@ -247,7 +317,6 @@ function annualFromBrapi(first: Record<string, unknown>): AssetAnnualResult[] {
       equity: null,
     });
   }
-
   for (const row of balance) {
     if (!row || typeof row !== "object") continue;
     const r = row as Record<string, unknown>;
@@ -258,7 +327,6 @@ function annualFromBrapi(first: Record<string, unknown>): AssetAnnualResult[] {
     current.equity = pickMetric(r, ["totalStockholderEquity", "stockholdersEquity", "totalEquityGrossMinorityInterest"]);
     byYear.set(year, current);
   }
-
   return [...byYear.values()].sort((a, b) => a.year.localeCompare(b.year)).slice(-8);
 }
 
@@ -272,7 +340,6 @@ function buildIndicators(kind: AssetKind, first: Record<string, unknown>): Asset
   const financialData = (first.financialData as Record<string, unknown> | undefined) ?? {};
   const stats = (first.defaultKeyStatistics as Record<string, unknown> | undefined) ?? {};
   const summary = (first.summaryDetail as Record<string, unknown> | undefined) ?? {};
-
   const pe = firstNumber(first.priceEarnings, stats.trailingPE, stats.forwardPE);
   const pvp = firstNumber(first.priceToBook, stats.priceToBook);
   const roe = firstNumber(first.returnOnEquity, financialData.returnOnEquity);
@@ -284,7 +351,6 @@ function buildIndicators(kind: AssetKind, first: Record<string, unknown>): Asset
   const liquidity = firstNumber(first.averageDailyVolume10Day, first.averageDailyVolume3Month, summary.averageVolume);
   const equity = firstNumber(first.equity, first.netWorth, stats.bookValue);
   const vpc = firstNumber(first.bookValue, stats.bookValue);
-
   if (kind === "fii") {
     return [
       { key: "pvp", label: "P/VP", value: pvp, unit: "number" },
@@ -294,7 +360,6 @@ function buildIndicators(kind: AssetKind, first: Record<string, unknown>): Asset
       { key: "vpc", label: "Valor patrimonial/cota", value: vpc, unit: "currency" },
     ];
   }
-
   return [
     { key: "pe", label: "P/L", value: pe, unit: "number" },
     { key: "pvp", label: "P/VP", value: pvp, unit: "number" },
@@ -325,7 +390,6 @@ function calculateScore(kind: AssetKind, indicators: AssetIndicator[], annual: A
     firstRevenue != null && lastRevenue != null && firstRevenue > 0 && annual.length > 1
       ? ((lastRevenue / firstRevenue) ** (1 / Math.max(annual.length - 1, 1)) - 1) * 100
       : null;
-
   const valuation =
     kind === "fii" ? average([scoreLower(pvp, 0.9, 1.4)]) : average([scoreLower(pe, 8, 28), scoreLower(pvp, 1, 4)]);
   const profitability =
@@ -344,7 +408,6 @@ function textAnalysis(kind: AssetKind, indicators: AssetIndicator[], score: Asse
   const debt = indicatorValue(indicators, "debtEbitda");
   const lastProfit = [...annual].reverse().find((a) => a.profit != null)?.profit ?? null;
   const prevProfit = [...annual].reverse().slice(1).find((a) => a.profit != null)?.profit ?? null;
-
   const valuation =
     kind === "fii"
       ? pvp == null
@@ -422,14 +485,19 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   const ticker = tickerRaw.trim().toUpperCase().replace(/\s+/g, "");
   if (!/^[A-Z0-9]{4,12}$/.test(ticker)) return null;
 
+  // brapi: usa range limitado ao plano gratuito para dados fundamentais
+  // O histórico de preços virá do Yahoo Finance (sem limitação de range)
+  const brapiRange = ["1d", "5d", "1mo", "3mo"].includes(range) ? range : "3mo";
+
   const data = await brapiJson<{
     results?: Array<Record<string, unknown>>;
   }>(`quote/${encodeURIComponent(ticker)}`, {
-    range,
-    interval: range === "1d" ? "5m" : "1d",
+    range: brapiRange,
+    interval: brapiRange === "1d" ? "5m" : "1d",
     fundamental: "true",
     dividends: "true",
-modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",  });
+    modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",
+  });
 
   const first = data?.results?.[0];
   if (!first) return null;
@@ -450,6 +518,9 @@ modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,
   const annualResults = annualFromBrapi(first);
   const atlasScore = calculateScore(kind, indicators, annualResults, dividendYield12m);
 
+  // Histórico: Yahoo Finance (1y, 5y, max) com fallback para brapi
+  const history = await fetchHistory(ticker, range, first.historicalDataPrice);
+
   return {
     ticker,
     name,
@@ -461,7 +532,7 @@ modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,
     logoUrl: firstString(first.logourl),
     updatedAt: new Date().toISOString(),
     indicators,
-    history: normalizeHistory(first.historicalDataPrice),
+    history,
     dividends,
     dividendYield12m,
     lastDividend: dividends[0] ?? null,
@@ -472,3 +543,4 @@ modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,
     automaticAnalysis: textAnalysis(kind, indicators, atlasScore, dividendYield12m, annualResults),
   };
 }
+

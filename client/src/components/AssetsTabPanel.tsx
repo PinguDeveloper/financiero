@@ -1,14 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InvestmentEntry } from "../types";
 import * as api from "../lib/api";
 import { buildInvestmentPositions } from "../lib/investmentPositions";
-import {  allCatalogTickers } from "../data/b3TickerCatalog";
+import { allCatalogTickers } from "../data/b3TickerCatalog";
 
 function normalizeTicker(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function TickerThumb({ ticker, url }: { ticker: string; url: string | null | undefined }) {
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt=""
+        className="h-7 w-7 shrink-0 rounded-lg border border-zinc-200 bg-white object-contain"
+      />
+    );
+  }
+  const u = ticker.trim().toUpperCase();
+  return (
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-zinc-600 bg-zinc-700 font-mono text-[9px] font-bold text-zinc-300">
+      {u.slice(0, 2) || "?"}
+    </div>
+  );
 }
 
 type Props = {
@@ -22,6 +40,8 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
   const [addInput, setAddInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [logoCache, setLogoCache] = useState<Record<string, string | null>>({});
+  const logoAttempted = useRef(new Set<string>());
 
   const portfolioTickers = useMemo(() => {
     const positions = buildInvestmentPositions(investmentEntries);
@@ -33,15 +53,36 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
       .sort();
   }, [investmentEntries]);
 
-  // Reutiliza mergeTickerSuggestions sem filtro de classe (string vazia = todos)
   const suggestions = useMemo(() => {
-  if (addInput.trim().length < 2) return [];
-  const q = addInput.trim().toUpperCase();
-  const all = allCatalogTickers();
-  const starts = all.filter((t) => t.startsWith(q));
-  const contains = all.filter((t) => !t.startsWith(q) && t.includes(q));
-  return [...starts, ...contains].slice(0, 40);
-}, [addInput]);
+    if (addInput.trim().length < 2) return [];
+    const q = addInput.trim().toUpperCase();
+    const all = allCatalogTickers();
+    const starts = all.filter((t) => t.startsWith(q));
+    const contains = all.filter((t) => !t.startsWith(q) && t.includes(q));
+    return [...starts, ...contains].slice(0, 40);
+  }, [addInput]);
+
+  // Busca logos das sugestões visíveis
+  useEffect(() => {
+    if (!suggestOpen || suggestions.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      for (const ticker of suggestions.slice(0, 12)) {
+        if (cancelled) return;
+        if (logoAttempted.current.has(ticker)) continue;
+        logoAttempted.current.add(ticker);
+        try {
+          const q = await api.fetchMarketQuote(ticker);
+          if (cancelled) return;
+          setLogoCache((prev) => ({ ...prev, [ticker]: q.logoUrl ?? null }));
+        } catch {
+          if (cancelled) return;
+          setLogoCache((prev) => ({ ...prev, [ticker]: null }));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [suggestOpen, suggestions]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -151,9 +192,10 @@ export function AssetsTabPanel({ investmentEntries }: Props) {
                     <button
                       type="button"
                       onClick={() => pickTicker(ticker)}
-                      className="w-full px-4 py-2.5 text-left font-mono text-sm text-slate-300 hover:bg-surface hover:text-white"
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left font-mono text-sm text-slate-300 hover:bg-surface hover:text-white"
                     >
-                      {ticker}
+                      <TickerThumb ticker={ticker} url={logoCache[ticker]} />
+                      <span>{ticker}</span>
                     </button>
                   </li>
                 ))}
