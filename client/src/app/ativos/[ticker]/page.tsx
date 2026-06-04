@@ -4,19 +4,19 @@ import { AssetPageClientOnly } from "../../../components/AssetPageClientOnly";
 import { allCatalogTickers } from "../../../data/b3TickerCatalog";
 import { fetchAssetForSsr } from "../../../lib/assetAnalysis";
 
+export const revalidate = 900;
+export const dynamicParams = false;
+
 type Props = {
   params: Promise<{
     ticker: string;
   }>;
 };
-export const revalidate = 900;
 
-export function generateStaticParams() {
-  if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
-    return [];
-  }
-
-  return allCatalogTickers().map((ticker) => ({ ticker }));
+export async function generateStaticParams() {
+  return allCatalogTickers().map((ticker) => ({
+    ticker,
+  }));
 }
 
 export async function generateMetadata({
@@ -24,19 +24,13 @@ export async function generateMetadata({
 }: Props): Promise<Metadata> {
   const { ticker } = await params;
 
-  if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
-    return {
-      title: `${ticker.toUpperCase()} | Atlas Invest`,
-      description: `Análise de ${ticker.toUpperCase()} no Atlas Invest.`,
-    };
-  }
-
   try {
     const asset = await fetchAssetForSsr(ticker);
 
     if (!asset) {
       return {
         title: `${ticker.toUpperCase()} | Atlas Invest`,
+        description: `Análise de ${ticker.toUpperCase()} no Atlas Invest.`,
       };
     }
 
@@ -55,16 +49,13 @@ export async function generateMetadata({
   } catch {
     return {
       title: `${ticker.toUpperCase()} | Atlas Invest`,
+      description: `Análise de ${ticker.toUpperCase()} no Atlas Invest.`,
     };
   }
 }
 
 export default async function AssetPage({ params }: Props) {
   const { ticker } = await params;
-
-  if (process.env.SKIP_ASSET_STATIC_PAGES === "1") {
-    return <AssetPageClientOnly ticker={ticker.trim().toUpperCase()} />;
-  }
 
   try {
     const asset = await fetchAssetForSsr(ticker);
