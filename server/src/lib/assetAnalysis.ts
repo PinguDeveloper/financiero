@@ -370,23 +370,6 @@ function normalizeHistory(rows: unknown): AssetHistoryPoint[] {
     .sort((a, b) => a!.date.localeCompare(b!.date)) as AssetHistoryPoint[];
 }
 
-async function fetchHistory(
-  ticker: string,
-  kind: AssetKind,
-  range: string,
-  brapiHistorical: unknown,
-): Promise<AssetHistoryPoint[]> {
-  // Para BDRs: histórico do próprio BDR (.SA), não do ticker US
-  const histSymbol = (kind === "bdr") ? `${ticker}.SA` : yahooSymbolFor(ticker, kind);
-  const chart = await yahooChart(histSymbol, range);
-  if (chart) {
-    const points = parseYahooHistory(chart);
-    if (points.length > 0) return points;
-  }
-  console.warn(`Yahoo history falhou para ${ticker}, usando brapi fallback`);
-  return normalizeHistory(brapiHistorical);
-}
-
 // ---------------------------------------------------------------------------
 // Dividendos
 // ---------------------------------------------------------------------------
@@ -802,3 +785,4 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     automaticAnalysis: textAnalysis(kind, indicators, atlasScore, dividendYield12m, annualResults),
   };
 }
+
