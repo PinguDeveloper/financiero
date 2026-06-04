@@ -1,6 +1,6 @@
 # Publicar na Vercel (front) + Render (API)
 
-O repositório já está organizado em **`client/`** (React) e **`server/`** (Node/Express). Você pode manter um único repositório no GitHub e apontar cada serviço para a pasta certa.
+O repositório já está organizado em **`client/`** (Next.js/PWA) e **`server/`** (Node/Express). Você pode manter um único repositório no GitHub e apontar cada serviço para a pasta certa.
 
 ## 1. Banco de dados (Render)
 
@@ -45,20 +45,44 @@ Após o deploy, anote a URL pública da API, por exemplo: `https://controle-fina
 
 ## 3. Front na Vercel
 
+Se o front continuar na Hostinger, use a seção **Hostinger** abaixo. Esta seção vale caso você decida publicar o front na Vercel.
+
 | Campo | Valor |
 |-------|--------|
 | **Root Directory** | `client` |
-| **Framework** | Vite |
+| **Framework** | Next.js |
 | **Build Command** | `npm run build` (padrão) |
-| **Output** | `dist` |
+| **Output** | Padrão do Next.js |
 
 **Variável de ambiente:**
 
 | Nome | Valor |
 |------|--------|
-| `VITE_API_BASE` | URL **completa** da API, **sem** barra no final, ex.: `https://controle-financeiro-api.onrender.com` |
+| `NEXT_PUBLIC_API_BASE` | URL **completa** da API, **sem** barra no final, ex.: `https://controle-financeiro-api.onrender.com` |
 
-O front chama `fetch(\`${VITE_API_BASE}/auth/...\`)` com `credentials: 'include'`, então o cookie de sessão é gravado no **domínio da API** (Render) e enviado nas requisições para a mesma API — funciona com front e back em domínios diferentes, desde que a API use **HTTPS** e cookies com `SameSite=None` (já configurado em `NODE_ENV=production`).
+O front chama `fetch(\`${NEXT_PUBLIC_API_BASE}/auth/...\`)` com `credentials: 'include'`, então o cookie de sessão é gravado no **domínio da API** (Render) e enviado nas requisições para a mesma API — funciona com front e back em domínios diferentes, desde que a API use **HTTPS** e cookies com `SameSite=None` (já configurado em `NODE_ENV=production`).
+
+Alternativa: deixe `NEXT_PUBLIC_API_BASE` vazio e configure `API_PROXY_TARGET=https://sua-api.onrender.com` na Vercel. Assim o Next faz rewrite de `/api/*` e `/auth/*` para a API e o navegador usa chamadas same-origin.
+
+## 3b. Front na Hostinger
+
+Para hospedagem estática da Hostinger, gere o export estático do Next:
+
+```bash
+cd client
+set NEXT_PUBLIC_API_BASE=https://sua-api.onrender.com
+npm run build:hostinger
+```
+
+Publique o conteúdo de `client/out` no diretório público do site. Se a Hostinger estiver conectada ao GitHub, configure:
+
+| Campo | Valor |
+|-------|-------|
+| **Root Directory** | `client` |
+| **Build Command** | `npm install && npm run build:hostinger` |
+| **Publish Directory** | `out` |
+
+Cadastre também a variável `NEXT_PUBLIC_API_BASE` com a URL pública da API no Render. Nesse modo, rewrites do Next não rodam na Hostinger; por isso o front precisa chamar a API diretamente pelo domínio do Render.
 
 ## 4. E-mail em produção (Resend + domínio do site na Vercel)
 
@@ -106,9 +130,9 @@ Salve e faça **Manual Deploy** (ou push no `main`) para a API reiniciar com as 
 
 | Variável | Valor |
 |----------|--------|
-| `VITE_API_BASE` | `https://sua-api.onrender.com` (sem barra no final) |
+| `NEXT_PUBLIC_API_BASE` | `https://sua-api.onrender.com` (sem barra no final) |
 
-Redeploy do front se alterou `VITE_API_BASE`.
+Redeploy do front se alterou `NEXT_PUBLIC_API_BASE`.
 
 **5. Testar no site principal**
 
@@ -130,7 +154,7 @@ Redeploy do front se alterou `VITE_API_BASE`.
 - [ ] Domínio **Verified** na Resend; `EMAIL_FROM` usa `@seudominio.com`.
 - [ ] `APP_PUBLIC_URL` = URL do site principal na Vercel.
 - [ ] `CLIENT_ORIGIN` na API = mesma URL (https).
-- [ ] `VITE_API_BASE` na Vercel = URL da API no Render (https).
+- [ ] `NEXT_PUBLIC_API_BASE` na Vercel = URL da API no Render (https) ou `API_PROXY_TARGET` configurado para o rewrite do Next.
 - [ ] `RESEND_API_KEY` no Render (nunca no repositório).
 - [ ] Postgres ativo e `npm run db:migrate` no build da API.
 - [ ] Testar **esqueci a senha** no site principal após redeploy.

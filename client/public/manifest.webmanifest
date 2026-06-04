@@ -1,0 +1,34 @@
+{
+  "name": "Atlas Invest - Controle financeiro",
+  "short_name": "Atlas Invest",
+  "description": "Controle financeiro pessoal com gastos, parcelas, investimentos e caixinhas.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1419",
+  "theme_color": "#0f1419",
+  "orientation": "portrait-primary",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Abrir painel",
+      "short_name": "Painel",
+      "url": "/app",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Investimentos",
+      "short_name": "Invest.",
+      "url": "/app?tab=investimentos",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}

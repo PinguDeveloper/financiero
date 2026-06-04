@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AppTopBar } from "./components/AppTopBar";
 import { AnimatePresence, motion } from "framer-motion";
 import { SavingsBoxesPanel } from "./components/SavingsBoxesPanel";
@@ -50,7 +50,9 @@ function parseMainTab(value: string | null): MainTab {
 
 function FinanceShell() {
   const { user, subscription, refreshMe } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   if (!user) return null;
 
   const showPaywall = subscription && !subscription.hasAccess;
@@ -67,7 +69,8 @@ function FinanceShell() {
     const nextParams = new URLSearchParams(searchParams);
     if (next === "dashboard") nextParams.delete("tab");
     else nextParams.set("tab", next);
-    setSearchParams(nextParams, { replace: true });
+    const query = nextParams.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   }
 
   useEffect(() => {

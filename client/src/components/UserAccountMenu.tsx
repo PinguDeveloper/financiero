@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../context/AuthContext";
 
 function initials(email: string): string {
@@ -9,7 +10,7 @@ function initials(email: string): string {
 
 export function UserAccountMenu({ showAppLink }: { showAppLink?: boolean }) {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +30,7 @@ export function UserAccountMenu({ showAppLink }: { showAppLink?: boolean }) {
   async function handleLogout() {
     setOpen(false);
     await logout();
-    navigate("/", { replace: true });
+    router.replace("/");
   }
 
   return (
@@ -67,7 +68,7 @@ export function UserAccountMenu({ showAppLink }: { showAppLink?: boolean }) {
           {showAppLink ? (
             <Link
               role="menuitem"
-              to="/app"
+              href="/app"
               onClick={() => setOpen(false)}
               className="block px-4 py-2.5 text-sm text-slate-300 hover:bg-surface hover:text-white"
             >
@@ -76,7 +77,7 @@ export function UserAccountMenu({ showAppLink }: { showAppLink?: boolean }) {
           ) : null}
           <Link
             role="menuitem"
-            to="/app?tab=assinatura"
+            href="/app?tab=assinatura"
             onClick={() => setOpen(false)}
             className="block px-4 py-2.5 text-sm text-slate-300 hover:bg-surface hover:text-white"
           >

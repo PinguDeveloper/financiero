@@ -1,6 +1,6 @@
 import type { PersistedState } from "../types";
 
-const base = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, "") ?? "";
+const base = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ?? "";
 
 /** JWT em memória de aba: cookies cross-site (Vercel→API) costumam não ir; o servidor aceita Bearer. */
 const ACCESS_TOKEN_KEY = "atlas_invest_access_v3";

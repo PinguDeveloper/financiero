@@ -9,3 +9,5 @@ server/prisma/*.db-journal
 server/prisma/**/*.db
 server/prisma/**/*.db-journal
 client/dist
+client/.next
+client/out

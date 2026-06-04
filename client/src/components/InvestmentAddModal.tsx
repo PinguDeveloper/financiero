@@ -1,5 +1,4 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import type { InvestmentEntry, InvestmentKind } from "../types";
 import { formatBRL } from "../lib/format";
 import * as api from "../lib/api";

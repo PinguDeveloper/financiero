@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../lib/api";
@@ -12,7 +13,7 @@ function resetTokenFromUrl(): string | null {
 }
 
 export function LoginScreen({ initialMode = "login" }: { initialMode?: "login" | "register" }) {
-  const navigate = useNavigate();
+  const router = useRouter();
   const { login, registerStart, registerVerify } = useAuth();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [verifyCode, setVerifyCode] = useState("");
@@ -44,7 +45,7 @@ export function LoginScreen({ initialMode = "login" }: { initialMode?: "login" |
     try {
       if (mode === "login") {
         await login(email, password);
-        navigate("/app", { replace: true });
+        router.replace("/app");
       } else if (mode === "register") {
         const r = await registerStart(email, password);
         setDevCode(r.devCode ?? null);
@@ -57,7 +58,7 @@ export function LoginScreen({ initialMode = "login" }: { initialMode?: "login" |
         if (r.emailError) setMessage(r.emailError);
       } else if (mode === "register-verify") {
         await registerVerify(email, verifyCode);
-        navigate("/app", { replace: true });
+        router.replace("/app");
       } else if (mode === "forgot") {
         const r = await api.authForgotPassword(email);
         setForgotEmailSent(Boolean(r.emailSent));
@@ -103,7 +104,7 @@ export function LoginScreen({ initialMode = "login" }: { initialMode?: "login" |
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         className="card-interactive w-full max-w-md rounded-2xl border border-surface-border bg-surface-raised p-8 shadow-xl shadow-black/30"
       >
-        <Link to="/" className="block text-center text-xs font-semibold uppercase tracking-widest text-accent hover:underline">
+        <Link href="/" className="block text-center text-xs font-semibold uppercase tracking-widest text-accent hover:underline">
           Atlas Invest
         </Link>
         <h1 className="mt-2 text-center font-display text-2xl font-bold text-white">{title}</h1>

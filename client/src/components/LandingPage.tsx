@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { UserAccountMenu } from "./UserAccountMenu";
@@ -78,7 +78,7 @@ export function LandingPage() {
     <div className="min-h-screen bg-surface text-slate-200">
       <header className="border-b border-surface-border bg-surface/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
-          <Link to="/" className="font-display text-lg font-bold text-white">
+          <Link href="/" className="font-display text-lg font-bold text-white">
             Atlas Invest
           </Link>
           <nav className="flex items-center gap-3 sm:gap-6">
@@ -94,7 +94,7 @@ export function LandingPage() {
             {ready && loggedIn ? (
               <>
                 <Link
-                  to="/app"
+                  href="/app"
                   className="hidden rounded-xl border border-surface-border px-4 py-2 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-white sm:inline"
                 >
                   Meu painel
@@ -104,13 +104,13 @@ export function LandingPage() {
             ) : ready ? (
               <>
                 <Link
-                  to="/login"
+                  href="/login"
                   className="rounded-xl border border-surface-border px-4 py-2 text-sm font-medium text-slate-300 hover:border-slate-500 hover:text-white"
                 >
                   Entrar
                 </Link>
                 <Link
-                  to="/cadastro"
+                  href="/cadastro"
                   className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-accent/25 hover:opacity-90"
                 >
                   Criar conta
@@ -142,14 +142,14 @@ export function LandingPage() {
           </p>
           <div className="mt-10 flex flex-wrap gap-4">
             <Link
-              to={loggedIn ? "/app" : "/cadastro"}
+              href={loggedIn ? "/app" : "/cadastro"}
               className="rounded-xl bg-accent px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-accent/30 hover:opacity-90"
             >
               {loggedIn ? "Ir para o painel" : "Começar teste grátis"}
             </Link>
             {!loggedIn ? (
               <Link
-                to="/login"
+                href="/login"
                 className="rounded-xl border border-surface-border bg-surface-raised px-8 py-3.5 text-base font-semibold text-slate-300 hover:border-slate-500 hover:text-white"
               >
                 Já tenho conta
@@ -230,7 +230,7 @@ export function LandingPage() {
                     <p className="mt-4 text-xs text-slate-500">{cta.hint}</p>
                   ) : null}
                   <Link
-                    to={cta.to}
+                    href={cta.to}
                     className={`mt-6 block rounded-xl py-3 text-center text-sm font-semibold transition ${
                       plan.highlight
                         ? "bg-accent text-white hover:opacity-90"
