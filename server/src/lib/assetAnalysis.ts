@@ -429,8 +429,7 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     interval: range === "1d" ? "5m" : "1d",
     fundamental: "true",
     dividends: "true",
-    modules: "summaryProfile,financialData,defaultKeyStatistics,summaryDetail,balanceSheetHistory,incomeStatementHistory",
-  });
+modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",  });
 
   const first = data?.results?.[0];
   if (!first) return null;
