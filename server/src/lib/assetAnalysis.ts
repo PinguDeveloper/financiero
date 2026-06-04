@@ -101,7 +101,7 @@ function bdrBaseTickerUs(ticker: string): string | null {
 // ---------------------------------------------------------------------------
 const httpHeaders = {
   Accept: "application/json",
-  "User-Agent": "Mozilla/5.0 (compatible; AtlasInvest/2.0)",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 } as const;
 
 const cache = new Map<string, { expiresAt: number; value: unknown }>();
@@ -119,6 +119,66 @@ function getCached<T>(key: string): T | null {
 function setCached<T>(key: string, value: T): T {
   cache.set(key, { value, expiresAt: Date.now() + cacheMs() });
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// Yahoo Finance — crumb (necessário desde 2024 para quoteSummary)
+// ---------------------------------------------------------------------------
+let yahooCrumbCache: { crumb: string; cookie: string; expiresAt: number } | null = null;
+
+async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null> {
+  if (yahooCrumbCache && yahooCrumbCache.expiresAt > Date.now()) {
+    return { crumb: yahooCrumbCache.crumb, cookie: yahooCrumbCache.cookie };
+  }
+
+  try {
+    // Passo 1: pega cookies visitando a página do Yahoo Finance
+    const consentRes = await fetch("https://finance.yahoo.com/quote/AAPL", {
+      headers: {
+        "User-Agent": httpHeaders["User-Agent"],
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    });
+
+    const cookies = consentRes.headers.get("set-cookie") ?? "";
+    // Extrai apenas os valores relevantes (A1, A3, GUC, etc.)
+    const cookieHeader = cookies
+      .split(",")
+      .map((c) => c.split(";")[0].trim())
+      .filter((c) => c.includes("="))
+      .join("; ");
+
+    // Passo 2: busca o crumb
+    const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
+      headers: {
+        "User-Agent": httpHeaders["User-Agent"],
+        "Accept": "*/*",
+        "Cookie": cookieHeader,
+        "Referer": "https://finance.yahoo.com",
+      },
+    });
+
+    console.log("YAHOO CRUMB STATUS:", crumbRes.status);
+    if (!crumbRes.ok) {
+      console.error("YAHOO CRUMB ERROR:", crumbRes.status);
+      return null;
+    }
+
+    const crumb = (await crumbRes.text()).trim();
+    if (!crumb || crumb.includes("<")) {
+      console.error("YAHOO CRUMB INVALID:", crumb.slice(0, 50));
+      return null;
+    }
+
+    console.log("YAHOO CRUMB OK:", crumb.slice(0, 8) + "...");
+    yahooCrumbCache = { crumb, cookie: cookieHeader, expiresAt: Date.now() + 3600_000 }; // 1h
+    return { crumb, cookie: cookieHeader };
+  } catch (err) {
+    console.error("YAHOO CRUMB FETCH ERROR:", err);
+    return null;
+  }
 }
 
 function toNumber(value: unknown): number | null {
@@ -264,6 +324,7 @@ async function yahooChart(symbol: string, range: string): Promise<YahooChartResu
 
 // ---------------------------------------------------------------------------
 // Yahoo Finance — quoteSummary (fundamentos)
+// Tenta v11 primeiro; se falhar, tenta v10 (formato ligeiramente diferente)
 // ---------------------------------------------------------------------------
 async function yahooSummary(symbol: string): Promise<YahooQuoteSummary | null> {
   const cacheKey = `yahoo:summary:${symbol}`;
@@ -280,24 +341,54 @@ async function yahooSummary(symbol: string): Promise<YahooQuoteSummary | null> {
     "price",
   ].join(",");
 
-  const url = `https://query1.finance.yahoo.com/v11/finance/quoteSummary/${symbol}?modules=${modules}`;
+  // Obtém crumb + cookie necessários desde 2024
+  const auth = await getYahooCrumb();
 
-  try {
-    const res = await fetch(url, {
-      headers: { ...httpHeaders, "Accept-Language": "pt-BR,pt;q=0.9" },
-    });
-    console.log("YAHOO SUMMARY:", symbol, "STATUS:", res.status);
-    if (!res.ok) { console.error("YAHOO SUMMARY ERROR:", res.status); return null; }
-    const json = (await res.json()) as {
-      quoteSummary?: { result?: YahooQuoteSummary[]; error?: unknown };
-    };
-    const result = json?.quoteSummary?.result?.[0] ?? null;
-    if (result) setCached(cacheKey, result);
-    return result;
-  } catch (err) {
-    console.error("YAHOO SUMMARY FETCH ERROR:", err);
-    return null;
-  }
+  const fetchSummary = async (version: "v11" | "v10"): Promise<YahooQuoteSummary | null> => {
+    const qs = new URLSearchParams({ modules, corsDomain: "finance.yahoo.com" });
+    if (auth?.crumb) qs.set("crumb", auth.crumb);
+    const url = `https://query1.finance.yahoo.com/${version}/finance/quoteSummary/${symbol}?${qs}`;
+    try {
+      const res = await fetch(url, {
+        headers: {
+          ...httpHeaders,
+          "Accept-Language": "en-US,en;q=0.9",
+          "Origin": "https://finance.yahoo.com",
+          "Referer": `https://finance.yahoo.com/quote/${symbol}`,
+          ...(auth?.cookie ? { "Cookie": auth.cookie } : {}),
+        },
+      });
+      console.log(`YAHOO SUMMARY (${version}):`, symbol, "STATUS:", res.status);
+      if (!res.ok) {
+        console.error(`YAHOO SUMMARY (${version}) ERROR:`, res.status);
+        return null;
+      }
+      const json = (await res.json()) as {
+        quoteSummary?: { result?: YahooQuoteSummary[]; error?: unknown };
+      };
+      const result = json?.quoteSummary?.result?.[0] ?? null;
+      if (result) {
+        const fd = result.financialData as Record<string, unknown> | undefined;
+        const ks = result.defaultKeyStatistics as Record<string, unknown> | undefined;
+        console.log(`YAHOO SUMMARY (${version}) FIELDS:`, {
+          trailingPE:         ks?.trailingPE,
+          priceToBook:        ks?.priceToBook,
+          enterpriseToEbitda: ks?.enterpriseToEbitda,
+          returnOnEquity:     fd?.returnOnEquity,
+          profitMargins:      fd?.profitMargins,
+          debtToEquity:       fd?.debtToEquity,
+          dividendYield:      (result.summaryDetail as Record<string, unknown> | undefined)?.dividendYield,
+        });
+        setCached(cacheKey, result);
+      }
+      return result;
+    } catch (err) {
+      console.error(`YAHOO SUMMARY (${version}) FETCH ERROR:`, err);
+      return null;
+    }
+  };
+
+  return (await fetchSummary("v11")) ?? (await fetchSummary("v10"));
 }
 
 // ---------------------------------------------------------------------------
@@ -468,20 +559,56 @@ function buildIndicators(
   const sd  = (yahoo?.summaryDetail       as Record<string, unknown> | undefined) ?? {};
   const pr  = (yahoo?.price               as Record<string, unknown> | undefined) ?? {};
 
-  const pe        = firstNumber(yahooVal(ks, "trailingPE"), yahooVal(ks, "forwardPE"), brapi.priceEarnings);
-  const pvp       = firstNumber(yahooVal(ks, "priceToBook"), brapi.priceToBook);
-  const roe       = firstNumber(yahooVal(fd, "returnOnEquity"));
-  const roic      = firstNumber(yahooVal(fd, "returnOnAssets")); // proxy
-  const evEbitda  = firstNumber(yahooVal(ks, "enterpriseToEbitda"));
-  const dy        = firstNumber(yahooVal(sd, "dividendYield"), yahooVal(pr, "dividendYield"), brapi.dividendYield);
-  const margin    = firstNumber(yahooVal(fd, "profitMargins"));
-  const debtEbitda= firstNumber(yahooVal(fd, "debtToEquity")); // D/E como proxy
+  // Yahoo retorna valores como { raw: number, fmt: string } OU direto como number
+  // Buscamos nos múltiplos módulos onde cada campo pode aparecer
+  const pe        = firstNumber(
+    yahooVal(ks, "trailingPE"), yahooVal(ks, "forwardPE"),
+    yahooVal(sd, "trailingPE"),
+    brapi.priceEarnings,
+  );
+  const pvp       = firstNumber(
+    yahooVal(ks, "priceToBook"),
+    yahooVal(sd, "priceToBook"),
+    brapi.priceToBook,
+  );
+  const roe       = firstNumber(
+    yahooVal(fd, "returnOnEquity"),
+    yahooVal(ks, "returnOnEquity"),
+  );
+  const roic      = firstNumber(
+    yahooVal(fd, "returnOnInvestedCapital"),
+    yahooVal(fd, "returnOnAssets"),
+    yahooVal(ks, "returnOnAssets"),
+  );
+  const evEbitda  = firstNumber(
+    yahooVal(ks, "enterpriseToEbitda"),
+    yahooVal(sd, "enterpriseToEbitda"),
+  );
+  const dy        = firstNumber(
+    yahooVal(sd, "dividendYield"),
+    yahooVal(sd, "trailingAnnualDividendYield"),
+    yahooVal(pr, "dividendYield"),
+    yahooVal(pr, "trailingAnnualDividendYield"),
+    brapi.dividendYield,
+  );
+  const margin    = firstNumber(
+    yahooVal(fd, "profitMargins"),
+    yahooVal(ks, "profitMargins"),
+  );
+  const debtEbitda = firstNumber(
+    yahooVal(fd, "debtToEquity"),  // D/E como proxy quando não há D/EBITDA
+    yahooVal(ks, "debtToEquity"),
+  );
   const liquidity = firstNumber(
     yahooVal(sd, "averageVolume"),
     yahooVal(sd, "averageVolume10days"),
+    yahooVal(pr, "averageVolume"),
     brapi.regularMarketVolume,
   );
-  const equity    = firstNumber(yahooVal(ks, "bookValue"));
+  const equity    = firstNumber(
+    yahooVal(ks, "bookValue"),
+    yahooVal(fd, "totalCash"),
+  );
   const vpc       = firstNumber(yahooVal(ks, "bookValue"));
 
   // Normaliza ROE/ROIC/margin/dy que o Yahoo retorna como decimal (0.25 = 25%)
@@ -785,4 +912,3 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     automaticAnalysis: textAnalysis(kind, indicators, atlasScore, dividendYield12m, annualResults),
   };
 }
-
