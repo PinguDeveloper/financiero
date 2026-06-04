@@ -489,34 +489,65 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   // O histórico de preços virá do Yahoo Finance (sem limitação de range)
   const brapiRange = ["1d", "5d", "1mo", "3mo"].includes(range) ? range : "3mo";
 
-  // Tenta com módulos completos (plano pago); se falhar, tenta só com summaryProfile (plano gratuito)
-  let data = await brapiJson<{
+ // Detecta FIIs
+const isFii = ticker.endsWith("11");
+
+let data: {
+  results?: Array<Record<string, unknown>>;
+} | null = null;
+
+// FIIs: usa apenas dados gratuitos
+if (isFii) {
+  console.log(`Consultando FII ${ticker} usando endpoint gratuito`);
+
+  data = await brapiJson<{
+    results?: Array<Record<string, unknown>>;
+  }>(`quote/${encodeURIComponent(ticker)}`, {
+    range: brapiRange,
+    interval: brapiRange === "1d" ? "5m" : "1d",
+  });
+} else {
+  // Ações: tenta módulos completos
+  data = await brapiJson<{
     results?: Array<Record<string, unknown>>;
   }>(`quote/${encodeURIComponent(ticker)}`, {
     range: brapiRange,
     interval: brapiRange === "1d" ? "5m" : "1d",
     fundamental: "true",
     dividends: "true",
-    modules: "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",
+    modules:
+      "summaryProfile,financialData,defaultKeyStatistics,balanceSheetHistory,incomeStatementHistory",
   });
 
-  // Fallback: plano gratuito só permite summaryProfile
+  // Fallback gratuito
   if (!data?.results?.[0]) {
-    console.warn(`Módulos completos indisponíveis para ${ticker}, tentando com summaryProfile apenas`);
+    console.warn(
+      `Módulos completos indisponíveis para ${ticker}, tentando modo gratuito`
+    );
+
     data = await brapiJson<{
       results?: Array<Record<string, unknown>>;
     }>(`quote/${encodeURIComponent(ticker)}`, {
       range: brapiRange,
       interval: brapiRange === "1d" ? "5m" : "1d",
-      fundamental: "true",
-      dividends: "true",
       modules: "summaryProfile",
     });
   }
+}
 
   const first = data?.results?.[0];
-  if (!first) return null;
+  console.log("DATA RECEBIDA:", JSON.stringify(data, null, 2));
 
+console.log("FIRST:", {
+  ticker,
+  existe: !!first,
+  symbol: first?.symbol,
+  shortName: first?.shortName,
+});
+ if (!first) {
+  console.error(`Nenhum resultado encontrado para ${ticker}`);
+  return null;
+}
   const kind = classifyKind(ticker, first);
   const name = firstString(first.longName, first.shortName, first.symbol) ?? ticker;
   const sector = firstString(first.sector, (first.summaryProfile as Record<string, unknown> | undefined)?.sector);
