@@ -158,20 +158,39 @@ function average(values: number[]): number {
 
 async function brapiJson<T>(path: string, params: Record<string, string>): Promise<T | null> {
   const token = process.env.BRAPI_TOKEN?.trim();
+
   const qs = new URLSearchParams(params);
-  if (token) qs.set("token", token);
+
+  if (token) {
+    qs.set("token", token);
+  }
+
   const url = `https://brapi.dev/api/${path}?${qs}`;
+
   const cached = getCached<T>(url);
   if (cached) return cached;
+
   try {
     const res = await fetch(url, { headers });
-    if (!res.ok) return null;
-    return setCached(url, (await res.json()) as T);
-  } catch {
+
+    console.log("BRAPI URL:", url);
+    console.log("BRAPI STATUS:", res.status);
+
+    if (!res.ok) {
+      console.error("BRAPI ERROR:", await res.text());
+      return null;
+    }
+
+    const json = (await res.json()) as T;
+
+    console.log("BRAPI SUCCESS");
+
+    return setCached(url, json);
+  } catch (err) {
+    console.error("BRAPI FETCH ERROR:", err);
     return null;
   }
 }
-
 function normalizeHistory(rows: unknown): AssetHistoryPoint[] {
   if (!Array.isArray(rows)) return [];
   return rows
