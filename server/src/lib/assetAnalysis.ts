@@ -132,48 +132,71 @@ async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null
   }
 
   try {
-    // Passo 1: pega cookies visitando a página do Yahoo Finance
-    const consentRes = await fetch("https://finance.yahoo.com/quote/AAPL", {
-      headers: {
-        "User-Agent": httpHeaders["User-Agent"],
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-      redirect: "follow",
-    });
+    // Usa o endpoint leve de consent para obter apenas os cookies essenciais
+    // (evita HeadersOverflowError que ocorre ao visitar finance.yahoo.com diretamente)
+    const consentRes = await fetch(
+      "https://consent.yahoo.com/v2/collectConsent?sessionId=1_cc-session_placeholder",
+      {
+        headers: {
+          "User-Agent": httpHeaders["User-Agent"],
+          "Accept": "text/html",
+        },
+        redirect: "manual", // não seguir redirects — só queremos os cookies do Set-Cookie
+      }
+    );
 
-    const cookies = consentRes.headers.get("set-cookie") ?? "";
-    // Extrai apenas os valores relevantes (A1, A3, GUC, etc.)
-    const cookieHeader = cookies
+    // Extrai cookies do header Set-Cookie (limitado, sem overflow)
+    const rawCookie = consentRes.headers.get("set-cookie") ?? "";
+    const cookieHeader = rawCookie
       .split(",")
       .map((c) => c.split(";")[0].trim())
       .filter((c) => c.includes("="))
+      .slice(0, 5) // limita a 5 cookies para evitar overflow
       .join("; ");
 
-    // Passo 2: busca o crumb
-    const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
+    // Busca o crumb com os cookies obtidos
+    const crumbRes = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
       headers: {
         "User-Agent": httpHeaders["User-Agent"],
-        "Accept": "*/*",
-        "Cookie": cookieHeader,
+        "Accept": "text/plain, */*",
         "Referer": "https://finance.yahoo.com",
+        ...(cookieHeader ? { "Cookie": cookieHeader } : {}),
       },
     });
 
     console.log("YAHOO CRUMB STATUS:", crumbRes.status);
+
     if (!crumbRes.ok) {
-      console.error("YAHOO CRUMB ERROR:", crumbRes.status);
-      return null;
+      // Tenta sem cookie como último recurso
+      const crumbRes2 = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
+        headers: {
+          "User-Agent": httpHeaders["User-Agent"],
+          "Accept": "text/plain, */*",
+          "Referer": "https://finance.yahoo.com",
+        },
+      });
+      if (!crumbRes2.ok) {
+        console.error("YAHOO CRUMB ERROR (sem cookie):", crumbRes2.status);
+        return null;
+      }
+      const crumb2 = (await crumbRes2.text()).trim();
+      if (!crumb2 || crumb2.includes("<") || crumb2.length < 5) {
+        console.error("YAHOO CRUMB INVALID:", crumb2.slice(0, 50));
+        return null;
+      }
+      console.log("YAHOO CRUMB OK (sem cookie):", crumb2.slice(0, 8) + "...");
+      yahooCrumbCache = { crumb: crumb2, cookie: "", expiresAt: Date.now() + 3600_000 };
+      return { crumb: crumb2, cookie: "" };
     }
 
     const crumb = (await crumbRes.text()).trim();
-    if (!crumb || crumb.includes("<")) {
+    if (!crumb || crumb.includes("<") || crumb.length < 5) {
       console.error("YAHOO CRUMB INVALID:", crumb.slice(0, 50));
       return null;
     }
 
     console.log("YAHOO CRUMB OK:", crumb.slice(0, 8) + "...");
-    yahooCrumbCache = { crumb, cookie: cookieHeader, expiresAt: Date.now() + 3600_000 }; // 1h
+    yahooCrumbCache = { crumb, cookie: cookieHeader, expiresAt: Date.now() + 3600_000 };
     return { crumb, cookie: cookieHeader };
   } catch (err) {
     console.error("YAHOO CRUMB FETCH ERROR:", err);
