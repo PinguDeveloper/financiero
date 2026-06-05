@@ -1,4 +1,5 @@
 import { fetchFiiIndicators, type FiiIndicators } from "./fiiScraper.js";
+import { fetchStockIndicators, type StockIndicators } from "./stockScraper.js";
 
 export type AssetKind =
   | "stock"
@@ -371,8 +372,17 @@ function buildIndicators(
   kind: AssetKind,
   brapi: Record<string, unknown>,
   scraped: FiiIndicators | null,
+  price?: number | null,
+  stockScraped?: StockIndicators | null,
 ): AssetIndicator[] {
-  const liquidity = firstNumber(brapi.regularMarketVolume);
+  const rawVolume = firstNumber(brapi.regularMarketVolume);
+  // regularMarketVolume = número de cotas negociadas → multiplica pelo preço para obter valor financeiro
+  const liquidity =
+    kind === "fii"
+      ? scraped?.liquidezDiaria ?? (rawVolume != null && price ? rawVolume * price : rawVolume)
+      : rawVolume != null && price
+        ? rawVolume * price
+        : rawVolume;
 
   if (kind === "fii" || kind === "etf") {
     return [
@@ -385,21 +395,22 @@ function buildIndicators(
     ];
   }
 
-  // Ações/BDRs/cripto — brapi gratuito tem P/L, P/VP, DY
-  const pe        = firstNumber(brapi.priceEarnings);
-  const pvp       = firstNumber(brapi.priceToBook);
-  const dy        = firstNumber(brapi.dividendYield);
+  // Ações/BDRs/cripto — combina brapi (P/L, P/VP, DY) com stockScraped (ROE, ROIC, margens, etc.)
   const pct = (v: number | null) => (v != null && Math.abs(v) <= 1 ? v * 100 : v);
 
+  const pe  = firstNumber(stockScraped?.pl,  brapi.priceEarnings);
+  const pvp = firstNumber(stockScraped?.pvp, brapi.priceToBook);
+  const dy  = firstNumber(stockScraped?.dividendYield, brapi.dividendYield);
+
   return [
-    { key: "pe",         label: "P/L",                   value: pe,       unit: "number"  },
-    { key: "pvp",        label: "P/VP",                  value: pvp,      unit: "number"  },
-    { key: "roe",        label: "ROE",                   value: null,     unit: "percent" },
-    { key: "roic",       label: "ROIC",                  value: null,     unit: "percent" },
-    { key: "evEbitda",   label: "EV/EBITDA",             value: null,     unit: "number"  },
-    { key: "dy",         label: "Dividend Yield",         value: pct(dy), unit: "percent" },
-    { key: "margin",     label: "Margem Líquida",         value: null,    unit: "percent" },
-    { key: "debtEbitda", label: "Dívida Líquida/EBITDA", value: null,     unit: "number"  },
+    { key: "pe",         label: "P/L",                   value: pe,                                   unit: "number"  },
+    { key: "pvp",        label: "P/VP",                  value: pvp,                                  unit: "number"  },
+    { key: "roe",        label: "ROE",                   value: stockScraped?.roe  ?? null,            unit: "percent" },
+    { key: "roic",       label: "ROIC",                  value: stockScraped?.roic ?? null,            unit: "percent" },
+    { key: "evEbitda",   label: "EV/EBITDA",             value: stockScraped?.evEbitda ?? null,        unit: "number"  },
+    { key: "dy",         label: "Dividend Yield",         value: pct(dy),                              unit: "percent" },
+    { key: "margin",     label: "Margem Líquida",         value: stockScraped?.margemLiquida ?? null,  unit: "percent" },
+    { key: "debtEbitda", label: "Dívida Líquida/EBITDA", value: stockScraped?.dividaEbitda ?? null,    unit: "number"  },
   ];
 }
 
@@ -550,14 +561,16 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   const kind = classifyKind(ticker);
 
   // ── 2. Brapi + Yahoo Chart + Scraper em paralelo ───────────────────────
-  const [brapiData, yahooChartData, fiiScraped] = await Promise.all([
+  const [brapiData, yahooChartData, fiiScraped, stockScraped] = await Promise.all([
     brapiJson<{ results?: Array<Record<string, unknown>> }>(
       `quote/${encodeURIComponent(ticker)}`,
       { range: brapiRange, interval: brapiRange === "1d" ? "5m" : "1d" },
     ),
     yahooChart(yahooSymbolFor(ticker, kind), range),
-    // Scraping só para FIIs e ETFs — ações ficam null
+    // Scraping só para FIIs e ETFs
     (kind === "fii" || kind === "etf") ? fetchFiiIndicators(ticker) : Promise.resolve(null),
+    // Scraping para ações, BDRs, ETFs de ações
+    (kind === "stock" || kind === "bdr" || kind === "us_stock") ? fetchStockIndicators(ticker) : Promise.resolve(null),
   ]);
 
   const brapiFirst = brapiData?.results?.[0] ?? null;
@@ -595,14 +608,16 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   // CORREÇÃO 1: scraper tem prioridade sobre brapi para setor/segmento
  const sector  = firstString(
   fiiScraped?.setor,
-  fiiScraped?.segmento,   // brapi retorna aqui
-  fiiScraped?.tipo,       // fallback: "Tijolo", "Papel", etc.
+  fiiScraped?.segmento,
+  fiiScraped?.tipo,
+  stockScraped?.sector,
   brapiFirst?.sector,
 ) ?? null;
 
 const segment = firstString(
   fiiScraped?.segmento,
   fiiScraped?.setor,
+  stockScraped?.segment,
   brapiFirst?.industry,
 ) ?? null;
 console.log("FII VPC:", fiiScraped?.valorPatrimonialCota, "PVP:", fiiScraped?.pvp);
@@ -643,7 +658,7 @@ console.log("FII VPC:", fiiScraped?.valorPatrimonialCota, "PVP:", fiiScraped?.pv
     price && price > 0 && dividend12m > 0 ? (dividend12m / price) * 100 : null;
 
   // ── 9. Indicadores, score, análise ────────────────────────────────────
-  const indicators    = buildIndicators(kind, brapiFirst ?? {}, fiiScraped);
+  const indicators    = buildIndicators(kind, brapiFirst ?? {}, fiiScraped, price, stockScraped);
  const annualResults = (kind === "fii" || kind === "etf")
   ? annualFromDividends(dividends)
   : annualFromYahoo();
