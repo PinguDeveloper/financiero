@@ -244,6 +244,23 @@ async function yahooChart(symbol: string, range: string): Promise<YahooChartResu
   }
 }
 
+
+function annualFromDividends(dividends: AssetDividend[]): AssetAnnualResult[] {
+  const map = new Map<string, number>();
+  for (const d of dividends) {
+    const year = d.date.slice(0, 4);
+    map.set(year, (map.get(year) ?? 0) + d.amount);
+  }
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([year, total]) => ({
+      year,
+      revenue: parseFloat(total.toFixed(4)),
+      profit: null,
+      equity: null,
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // Resolve o símbolo Yahoo para cada kind
 // ---------------------------------------------------------------------------
@@ -576,8 +593,19 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   ) ?? ticker;
 
   // CORREÇÃO 1: scraper tem prioridade sobre brapi para setor/segmento
-  const sector  = firstString(fiiScraped?.setor,    brapiFirst?.sector)   ?? null;
-  const segment = firstString(fiiScraped?.segmento, brapiFirst?.industry) ?? null;
+ const sector  = firstString(
+  fiiScraped?.setor,
+  fiiScraped?.segmento,   // brapi retorna aqui
+  fiiScraped?.tipo,       // fallback: "Tijolo", "Papel", etc.
+  brapiFirst?.sector,
+) ?? null;
+
+const segment = firstString(
+  fiiScraped?.segmento,
+  fiiScraped?.setor,
+  brapiFirst?.industry,
+) ?? null;
+console.log("FII VPC:", fiiScraped?.valorPatrimonialCota, "PVP:", fiiScraped?.pvp);
 
   // ── 6. Histórico ──────────────────────────────────────────────────────
   const history = yahooChartData
@@ -616,7 +644,9 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
 
   // ── 9. Indicadores, score, análise ────────────────────────────────────
   const indicators    = buildIndicators(kind, brapiFirst ?? {}, fiiScraped);
-  const annualResults = annualFromYahoo();
+ const annualResults = (kind === "fii" || kind === "etf")
+  ? annualFromDividends(dividends)
+  : annualFromYahoo();
   const atlasScore    = calculateScore(kind, indicators, annualResults, dividendYield12m);
 
   // ── 10. Logo ──────────────────────────────────────────────────────────

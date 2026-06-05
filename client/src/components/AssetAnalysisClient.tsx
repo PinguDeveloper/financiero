@@ -48,11 +48,12 @@ function monthlyDividends(asset: AssetAnalysis) {
 }
 
 function annualChart(asset: AssetAnalysis) {
+const isFii = (["fii", "etf"] as string[]).includes(asset.kind);
   return asset.annualResults.map((row) => ({
     year: row.year,
-    Receita: row.revenue ?? 0,
-    Lucro: row.profit ?? 0,
-    "Patrimônio": row.equity ?? 0,
+    ...(isFii
+      ? { "Dividendos/ano": row.revenue ?? 0 }
+      : { Receita: row.revenue ?? 0, Lucro: row.profit ?? 0, "Patrimônio": row.equity ?? 0 }),
   }));
 }
 
@@ -284,21 +285,26 @@ export function AssetAnalysisClient({ asset }: { asset: AssetAnalysis }) {
         </section>
 
         <section className="mt-8 rounded-lg border border-surface-border bg-surface-raised p-5">
-          <h2 className="font-display text-xl font-bold text-white">Crescimento histórico</h2>
-          <div className="mt-5 h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={annualBars}>
-                <CartesianGrid stroke="#243040" vertical={false} />
-                <XAxis dataKey="year" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} tickFormatter={(v) => compactCurrency(Number(v))} width={82} />
-                <Tooltip formatter={(v: number) => compactCurrency(v)} {...chartTooltipDark} />
-                <Bar dataKey="Receita" fill="#3d8bfd" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Lucro" fill="#34d399" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Patrimônio" fill="#f87171" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+  <h2 className="font-display text-xl font-bold text-white">
+    {(["fii", "etf"] as string[]).includes(asset.kind)
+  ? "Dividendos pagos por ano"
+  : "Crescimento histórico"}
+  </h2>
+  <div className="mt-5 h-80">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={annualBars}>
+        <CartesianGrid stroke="#243040" vertical={false} />
+        <XAxis dataKey="year" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+        <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} tickFormatter={(v) => compactCurrency(Number(v))} width={82} />
+        <Tooltip formatter={(v: number) => compactCurrency(v)} {...chartTooltipDark} />
+        <Bar dataKey="Dividendos/ano" fill="#34d399" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="Receita"        fill="#3d8bfd" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="Lucro"          fill="#34d399" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="Patrimônio"     fill="#f87171" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+</section>
 
         <section className="mt-8 rounded-lg border border-surface-border bg-surface-raised p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
