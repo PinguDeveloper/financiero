@@ -110,12 +110,25 @@ const SCRAPE_HEADERS = {
 
 function parseDecimalBR(raw: string | null | undefined): number | null {
   if (!raw) return null;
-  const cleaned = raw
-    .replace(/[^\d,.\-]/g, "")
-    .replace(/\.(?=\d{3}(?:,|$))/g, "")
-    .replace(",", ".");
+
+  // Detecta sufixo de magnitude antes de remover letras
+  // Suporta: "21,95 M", "21.95M", "6,17 bi", "6,17 bilhões", "500 K", "181.604,00"
+  const upper = raw.toUpperCase().trim();
+  let multiplier = 1;
+  if (/\d\s*BI(LHÕES)?/.test(upper) || /\d\s*BILLION/.test(upper)) multiplier = 1_000_000_000;
+  else if (/\d\s*M(I|LHÕES|ILLION)?/.test(upper)) multiplier = 1_000_000;
+  else if (/\d\s*K/.test(upper)) multiplier = 1_000;
+
+  let cleaned = raw.replace(/[^\d,.\-]/g, "");
+
+  // Sem sufixo: remove pontos separadores de milhar (ponto seguido de 3 dígitos)
+  if (multiplier === 1) {
+    cleaned = cleaned.replace(/\.(?=\d{3}(?:[,.]|$))/g, "");
+  }
+
+  cleaned = cleaned.replace(",", ".");
   const n = Number.parseFloat(cleaned);
-  return Number.isFinite(n) && n !== 0 ? n : null;
+  return Number.isFinite(n) && n !== 0 ? n * multiplier : null;
 }
 
 const EMPTY: FiiIndicators = {
@@ -670,3 +683,4 @@ export async function fetchFiiIndicators(ticker: string): Promise<FiiIndicators>
 
   return setCached(ticker, result);
 }
+
