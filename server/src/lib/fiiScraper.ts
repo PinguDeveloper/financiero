@@ -12,6 +12,10 @@ export type FiiIndicators = {
   dividendYield: number | null;
   patrimonioLiquido: number | null;
   valorPatrimonialCota: number | null;
+  segmento: string | null;
+  setor: string | null;
+  competitors: string[];
+  dyCAGR3y: number | null; // crescimento histórico do DY
 };
 
 // ---------------------------------------------------------------------------
@@ -25,7 +29,6 @@ const SCRAPE_HEADERS = {
   "Cache-Control": "no-cache",
 } as const;
 
-// Cache simples em memória (15 minutos)
 const _cache = new Map<string, { value: FiiIndicators; expiresAt: number }>();
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -40,43 +43,22 @@ function setCached(ticker: string, value: FiiIndicators): FiiIndicators {
   return value;
 }
 
-/**
- * Converte strings como "1,05", "8,74%", "1.234.567,89" para number.
- */
 function parseDecimalBR(raw: string | null | undefined): number | null {
   if (!raw) return null;
   const cleaned = raw
-    .replace(/[^\d,.\-]/g, "")          // remove R$, %, espaços, etc.
-    .replace(/\.(?=\d{3}(?:,|$))/g, "") // remove separador de milhar
-    .replace(",", ".");                  // troca vírgula decimal por ponto
+    .replace(/[^\d,.\-]/g, "")
+    .replace(/\.(?=\d{3}(?:,|$))/g, "")
+    .replace(",", ".");
   const n = Number.parseFloat(cleaned);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return Number.isFinite(n) && n !== 0 ? n : null;
 }
 
 // ---------------------------------------------------------------------------
-// Status Invest
-// Estrutura real da página (jun/2025):
+// Status Invest — estrutura real da página (jun/2025)
 //
-//   <div class="info">
-//     <h3 class="title">Dividend Yield</h3>
-//     <div class="value">
-//       <strong>12,14</strong> <span class="sub-value">%</span>
-//     </div>
-//   </div>
-//
-//   <div class="info">
-//     <h3 class="title">P/VP</h3>
-//     <div class="value"><strong>1,05</strong></div>
-//   </div>
-//
-//   <div class="info">
-//     <h3 class="title">Val. patrimonial p/cota</h3>
-//     <div class="value"><strong>9,38</strong></div>
-//   </div>
-//
-//   <div class="info">
-//     <span class="sm-text">Patrimônio R$ 4.316.748.113</span>
-//   </div>
+// Blocos .info com h3.title + strong para valores numéricos.
+// Patrimônio e VPC ficam em texto corrido próximos ao P/VP.
+// Segmento ANBIMA e FIIs relacionadas ficam na seção "Geral".
 // ---------------------------------------------------------------------------
 async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null> {
   const url = `https://statusinvest.com.br/fundos-imobiliarios/${ticker.toLowerCase()}`;
@@ -92,10 +74,15 @@ async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null>
     let dividendYield: number | null = null;
     let valorPatrimonialCota: number | null = null;
     let patrimonioLiquido: number | null = null;
+    let segmento: string | null = null;
+    let setor: string | null = null;
+    let dyCAGR3y: number | null = null;
+    const competitors: string[] = [];
 
-    // Itera todos os blocos .info e identifica pelo título
+    // ── Indicadores numéricos via blocos .info ────────────────────────────
     $(".info").each((_, el) => {
-      const title = $(el).find("h3.title, .title").first().text().trim().toLowerCase();
+      const titleEl = $(el).find("h3.title, .title").first();
+      const title = titleEl.text().trim().toLowerCase();
       const valueStr = $(el).find("strong").first().text().trim();
 
       if (!title) return;
@@ -106,39 +93,63 @@ async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null>
         dividendYield = dividendYield ?? parseDecimalBR(valueStr);
       } else if (title.includes("val. patrimonial") || title.includes("valor patrimonial")) {
         valorPatrimonialCota = valorPatrimonialCota ?? parseDecimalBR(valueStr);
+      } else if (title.includes("dy cagr (3")) {
+        dyCAGR3y = dyCAGR3y ?? parseDecimalBR(valueStr);
       }
 
-      // Patrimônio aparece como texto auxiliar: "Patrimônio R$ 4.316.748.113"
-      const smText = $(el).find(".sub-value, span").text();
-      if (smText.toLowerCase().includes("patrimônio")) {
-        const match = smText.match(/[\d.,]+/g);
-        if (match) {
-          const val = parseDecimalBR(match.join(""));
-          patrimonioLiquido = patrimonioLiquido ?? val;
-        }
+      // Patrimônio líquido aparece como texto auxiliar dentro do bloco Val. patrimonial
+      // Ex: "Patrimônio R$ 4.316.748.113"
+      const allText = $(el).text();
+      const matchPL = allText.match(/Patrimônio\s+R\$\s*([\d.]+(?:,\d+)?)/i);
+      if (matchPL && patrimonioLiquido == null) {
+        patrimonioLiquido = parseDecimalBR(matchPL[1]);
       }
     });
 
-    // Fallback: busca patrimônio em qualquer texto da página
-    if (patrimonioLiquido == null) {
-      $("*").each((_, el) => {
-        const text = $(el).children().length === 0 ? $(el).text().trim() : "";
-        if (text.toLowerCase().startsWith("patrimônio r$") || text.toLowerCase().startsWith("patrimônio\nr$")) {
-          const match = text.match(/[\d.]+,\d{2}/);
-          if (match) patrimonioLiquido = parseDecimalBR(match[0]);
+    // ── Segmento ANBIMA ───────────────────────────────────────────────────
+    // Aparece como: <span>Segmento ANBIMA</span> <strong>Logística</strong>
+    // ou dentro de um item de lista com texto "Segmento ANBIMA"
+    $("*").each((_, el) => {
+      if ($(el).children().length > 2) return; // ignora containers grandes
+      const text = $(el).text().trim();
+      if (text.toLowerCase() === "segmento anbima") {
+        const val = $(el).next().text().trim() || $(el).parent().find("strong, b, span").last().text().trim();
+        if (val && val.length < 60) setor = val;
+      }
+    });
+
+    // ── Segmento do fundo (ex: "Papéis") ────────────────────────────────
+    // Aparece em link: href="/fundos-imobiliarios/setor/.../papeis/..."
+    $("a[href*='/fundos-imobiliarios/setor/']").each((_, el) => {
+      const text = $(el).text().trim();
+      if (text && text.length < 40 && segmento == null) {
+        segmento = text;
+      }
+    });
+
+    // ── FIIs relacionadas (concorrentes) ─────────────────────────────────
+    // Aparece em links como: href="/fundos-imobiliarios/hgcr11"
+    $("a[href*='/fundos-imobiliarios/']").each((_, el) => {
+      const href = $(el).attr("href") ?? "";
+      const match = href.match(/\/fundos-imobiliarios\/([a-z]{4}11)$/i);
+      if (match) {
+        const t = match[1].toUpperCase();
+        if (t !== ticker.toUpperCase() && !competitors.includes(t) && competitors.length < 6) {
+          competitors.push(t);
         }
-      });
-    }
+      }
+    });
 
     console.log(`[fiiScraper] StatusInvest ${ticker} parsed:`, {
       pvp, dividendYield, valorPatrimonialCota, patrimonioLiquido,
+      segmento, setor, dyCAGR3y, competitors,
     });
 
-    if (pvp == null && dividendYield == null && valorPatrimonialCota == null && patrimonioLiquido == null) {
+    if (pvp == null && dividendYield == null && valorPatrimonialCota == null) {
       return null;
     }
 
-    return { pvp, dividendYield, patrimonioLiquido, valorPatrimonialCota };
+    return { pvp, dividendYield, patrimonioLiquido, valorPatrimonialCota, segmento, setor, competitors, dyCAGR3y };
   } catch (err) {
     console.error(`[fiiScraper] StatusInvest ${ticker} ERROR:`, err);
     return null;
@@ -162,12 +173,11 @@ async function scrapeFundsExplorer(ticker: string): Promise<FiiIndicators | null
     let dividendYield: number | null = null;
     let valorPatrimonialCota: number | null = null;
     let patrimonioLiquido: number | null = null;
+    let segmento: string | null = null;
 
-    // Tenta seletores conhecidos do Funds Explorer
-    $("[class*='indicator'], [class*='detail'], .boxed-info").each((_, el) => {
+    $("[class*='indicator'], [class*='detail'], .boxed-info, [class*='card']").each((_, el) => {
       const title = $(el).find("[class*='title'], [class*='label'], span, h3, h4").first().text().trim().toLowerCase();
       const valueRaw = $(el).find("[class*='value'], [class*='number'], p, strong, b").first().text().trim();
-
       if (!title || !valueRaw) return;
 
       if (title.includes("p/vp") || title === "pvp") {
@@ -178,18 +188,18 @@ async function scrapeFundsExplorer(ticker: string): Promise<FiiIndicators | null
         valorPatrimonialCota = valorPatrimonialCota ?? parseDecimalBR(valueRaw);
       } else if (title.includes("patrimônio líquido") || title.includes("patrimonio liquido")) {
         patrimonioLiquido = patrimonioLiquido ?? parseDecimalBR(valueRaw);
+      } else if (title.includes("segmento") || title.includes("tipo")) {
+        if (!segmento && valueRaw.length < 50) segmento = valueRaw;
       }
     });
 
     console.log(`[fiiScraper] FundsExplorer ${ticker} parsed:`, {
-      pvp, dividendYield, valorPatrimonialCota, patrimonioLiquido,
+      pvp, dividendYield, valorPatrimonialCota, patrimonioLiquido, segmento,
     });
 
-    if (pvp == null && dividendYield == null && valorPatrimonialCota == null && patrimonioLiquido == null) {
-      return null;
-    }
+    if (pvp == null && dividendYield == null && valorPatrimonialCota == null) return null;
 
-    return { pvp, dividendYield, patrimonioLiquido, valorPatrimonialCota };
+    return { pvp, dividendYield, patrimonioLiquido, valorPatrimonialCota, segmento, setor: null, competitors: [], dyCAGR3y: null };
   } catch (err) {
     console.error(`[fiiScraper] FundsExplorer ${ticker} ERROR:`, err);
     return null;
@@ -197,7 +207,7 @@ async function scrapeFundsExplorer(ticker: string): Promise<FiiIndicators | null
 }
 
 // ---------------------------------------------------------------------------
-// Merge: combina dois resultados preenchendo campos nulos
+// Merge
 // ---------------------------------------------------------------------------
 function mergeIndicators(primary: FiiIndicators, fallback: FiiIndicators): FiiIndicators {
   return {
@@ -205,6 +215,10 @@ function mergeIndicators(primary: FiiIndicators, fallback: FiiIndicators): FiiIn
     dividendYield:        primary.dividendYield        ?? fallback.dividendYield,
     patrimonioLiquido:    primary.patrimonioLiquido    ?? fallback.patrimonioLiquido,
     valorPatrimonialCota: primary.valorPatrimonialCota ?? fallback.valorPatrimonialCota,
+    segmento:             primary.segmento             ?? fallback.segmento,
+    setor:                primary.setor                ?? fallback.setor,
+    competitors:          primary.competitors.length   >  0 ? primary.competitors : fallback.competitors,
+    dyCAGR3y:             primary.dyCAGR3y             ?? fallback.dyCAGR3y,
   };
 }
 
@@ -213,10 +227,9 @@ function mergeIndicators(primary: FiiIndicators, fallback: FiiIndicators): FiiIn
 // ---------------------------------------------------------------------------
 export async function fetchFiiIndicators(ticker: string): Promise<FiiIndicators> {
   const empty: FiiIndicators = {
-    pvp: null,
-    dividendYield: null,
-    patrimonioLiquido: null,
-    valorPatrimonialCota: null,
+    pvp: null, dividendYield: null, patrimonioLiquido: null,
+    valorPatrimonialCota: null, segmento: null, setor: null,
+    competitors: [], dyCAGR3y: null,
   };
 
   const cached = getCached(ticker);
@@ -225,14 +238,12 @@ export async function fetchFiiIndicators(ticker: string): Promise<FiiIndicators>
     return cached;
   }
 
-  // Roda as duas fontes em paralelo
   const [statusInvest, fundsExplorer] = await Promise.all([
     scrapeStatusInvest(ticker),
     scrapeFundsExplorer(ticker),
   ]);
 
   let result = empty;
-
   if (statusInvest && fundsExplorer) {
     result = mergeIndicators(statusInvest, fundsExplorer);
   } else if (statusInvest) {
