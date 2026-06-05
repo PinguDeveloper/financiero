@@ -2,9 +2,10 @@
  * fiiScraper.ts
  * Busca indicadores fundamentalistas de FIIs.
  *
- * Fonte primária : brapi.dev          (API REST oficial — dados CVM/B3)
- * Fonte fallback : statusinvest.com.br (scraping HTML)
- * Fonte fallback2: fundsexplorer.com.br (scraping HTML)
+ * Ordem de prioridade (fallback em cascata):
+ *   1. brapi.dev          — API REST oficial (dados CVM/B3)
+ *   2. investidor10.com.br — scraping HTML
+ *   3. statusinvest.com.br — scraping HTML (último recurso)
  *
  * ── Como obter sua chave da brapi ──────────────────────────────────────────
  * 1. Acesse https://brapi.dev e crie uma conta gratuita
@@ -58,26 +59,25 @@ export type FiiIndicators = {
   competitors: string[];                 // FIIs do mesmo segmento
 
   // ── Metadados ────────────────────────────────────────────────────────────
-  fonte: "brapi" | "statusinvest" | "fundsexplorer" | "merged";
+  fonte: "brapi" | "investidor10" | "statusinvest" | "merged";
   dataReferencia: string | null;         // Data do dado mais recente (ISO)
 };
 
 /**
  * Score de qualidade do FII (0–100).
- * Cada critério pontua uma fatia do total — quanto maior, melhor.
  */
 export type FiiScore = {
-  total: number;          // 0–100
+  total: number;
   criterios: {
-    pvpBaixo: number;       // max 20 pts — P/VP abaixo de 1,05 é ótimo
-    dyElevado: number;      // max 25 pts — DY acima da Selic é positivo
-    liquidezOk: number;     // max 15 pts — liquidez diária > R$ 500k
-    vacanciaOk: number;     // max 20 pts — vacância física < 10%
-    taxaBaixa: number;      // max 10 pts — taxa total < 1% a.a.
-    plGrande: number;       // max 10 pts — PL > R$ 1 bilhão
+    pvpBaixo: number;
+    dyElevado: number;
+    liquidezOk: number;
+    vacanciaOk: number;
+    taxaBaixa: number;
+    plGrande: number;
   };
-  alertas: string[];      // Pontos negativos encontrados
-  destaques: string[];    // Pontos positivos encontrados
+  alertas: string[];
+  destaques: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -186,15 +186,14 @@ function calcularScore(ind: FiiIndicators, selicAtual = 14.75): FiiScore {
     else                                       { criterios.liquidezOk = 0;  alertas.push("Liquidez muito baixa (< R$ 100k/dia) — difícil entrada/saída"); }
   }
 
-  // Vacância física (max 20 pts) — só se disponível
+  // Vacância física (max 20 pts)
   if (ind.vacanciaFisica !== null) {
     if (ind.vacanciaFisica <= 3)       { criterios.vacanciaOk = 20; destaques.push(`Vacância física baixíssima: ${ind.vacanciaFisica.toFixed(1)}%`); }
     else if (ind.vacanciaFisica <= 8)  { criterios.vacanciaOk = 15; destaques.push(`Vacância física controlada: ${ind.vacanciaFisica.toFixed(1)}%`); }
     else if (ind.vacanciaFisica <= 15) { criterios.vacanciaOk = 8;  alertas.push(`Vacância física moderada: ${ind.vacanciaFisica.toFixed(1)}%`); }
     else                                { criterios.vacanciaOk = 0;  alertas.push(`Vacância física alta: ${ind.vacanciaFisica.toFixed(1)}%`); }
   } else {
-    // FIIs de papel não têm vacância física — pontua parcialmente
-    criterios.vacanciaOk = 10;
+    criterios.vacanciaOk = 10; // FIIs de papel não têm vacância física
   }
 
   // Taxa total de administração (max 10 pts)
@@ -220,12 +219,7 @@ function calcularScore(ind: FiiIndicators, selicAtual = 14.75): FiiScore {
 }
 
 // ---------------------------------------------------------------------------
-// Fonte 1: brapi.dev — endpoints dedicados de FII (plano gratuito)
-//
-// Endpoints usados (todos gratuitos):
-//   GET /api/v2/fii/indicators?ticker=XPML11   → P/VP, DY, VPC, PL, cotistas, liquidez, segmento
-//   GET /api/v2/fii/dividends?ticker=XPML11    → histórico de rendimentos
-//   GET /api/quote/XPML11                       → preço atual em tempo real
+// Fonte 1: brapi.dev — endpoints dedicados de FII
 // ---------------------------------------------------------------------------
 async function fetchBrapi(ticker: string): Promise<FiiIndicators | null> {
   const token = process.env.BRAPI_TOKEN;
@@ -242,7 +236,6 @@ async function fetchBrapi(ticker: string): Promise<FiiIndicators | null> {
   const urlCotacao     = `https://brapi.dev/api/quote/${t}?${auth}`;
 
   try {
-    // Busca em paralelo os três endpoints
     const [resInd, resDiv, resCot] = await Promise.all([
       fetch(urlIndicadores),
       fetch(urlDividendos),
@@ -251,17 +244,27 @@ async function fetchBrapi(ticker: string): Promise<FiiIndicators | null> {
 
     console.log(`[fiiScraper] brapi ${t} — indicators:${resInd.status} dividends:${resDiv.status} quote:${resCot.status}`);
 
-    // Pelo menos indicadores precisa retornar OK
-    if (!resInd.ok) return null;
+    // Se indicators falhou, tenta aproveitar só a cotação
+    const jsonCot = resCot.ok ? await resCot.json() : null;
+    const cotData = jsonCot?.results?.[0] ?? null;
+    const preco: number | null = cotData?.regularMarketPrice ?? null;
+
+    if (!resInd.ok) {
+      // Retorna parcial só com preço se a cotação funcionou
+      if (preco != null) {
+        return {
+          ...EMPTY,
+          preco,
+          fonte: "brapi",
+          dataReferencia: new Date().toISOString().slice(0, 10),
+        };
+      }
+      return null;
+    }
 
     const jsonInd = await resInd.json();
     const jsonDiv = resDiv.ok ? await resDiv.json() : null;
-    const jsonCot = resCot.ok ? await resCot.json() : null;
 
-    // ── /api/v2/fii/indicators ───────────────────────────────────────────────
-    // Resposta: { results: [{ ticker, p_vp, dividend_yield, dividend_yield_1m,
-    //   valor_patrimonial_por_cota, patrimonio_liquido, numero_cotistas,
-    //   liquidez_diaria, segmento, tipo_fundo, ... }] }
     const ind = jsonInd?.results?.[0] ?? jsonInd?.data ?? jsonInd;
 
     const pvp: number | null                = ind?.p_vp                      ?? ind?.pvp                        ?? null;
@@ -272,11 +275,8 @@ async function fetchBrapi(ticker: string): Promise<FiiIndicators | null> {
     const liquidezDiaria: number | null     = ind?.liquidez_diaria             ?? ind?.liquidezDiaria              ?? null;
     const segmento: string | null           = ind?.segmento                    ?? ind?.setor                       ?? null;
     const tipo: string | null               = ind?.tipo_fundo                  ?? ind?.tipo                        ?? null;
+    const dy12mInd: number | null           = ind?.dividend_yield              ?? ind?.dividendYield               ?? null;
 
-    // DY direto dos indicadores (12m) — usado como fallback se não houver dividendos históricos
-    const dy12mInd: number | null = ind?.dividend_yield    ?? ind?.dividendYield    ?? null;
-    // ── /api/v2/fii/dividends ────────────────────────────────────────────────
-    // Resposta: { results: [{ paymentDate, value, ... }] }
     type DivEntry = { paymentDate?: string; payment_date?: string; value?: number; rate?: number };
     const dividendosHistorico: DivEntry[] = jsonDiv?.results ?? jsonDiv?.data ?? [];
 
@@ -299,18 +299,11 @@ async function fetchBrapi(ticker: string): Promise<FiiIndicators | null> {
       ? (ultimoEntry.value ?? ultimoEntry.rate ?? null)
       : null;
 
-    // ── /api/quote ───────────────────────────────────────────────────────────
-    const cotData = jsonCot?.results?.[0] ?? null;
-    const preco: number | null = cotData?.regularMarketPrice ?? null;
-
-    // DY final: preferência para o calculado sobre os dividendos reais;
-    // fallback para o valor já calculado pela brapi nos indicadores
     const dy12m: number | null =
       preco && somaDy12m > 0
         ? parseFloat(((somaDy12m / preco) * 100).toFixed(2))
         : (dy12mInd ?? null);
 
-    // Tipo normalizado
     const tipoNorm: string | null = (() => {
       const s = (tipo ?? segmento ?? "").toLowerCase();
       if (s.includes("papel") || s.includes("crédito") || s.includes("cri") || s.includes("recebíveis")) return "Papel";
@@ -328,26 +321,24 @@ async function fetchBrapi(ticker: string): Promise<FiiIndicators | null> {
       valorPatrimonialCota,
       dividendYield: dy12m,
       ultimoDividendo,
-      dyCAGR3y: null,       // não disponível no plano gratuito
+      dyCAGR3y: null,
       dyMedio12m: mediaMensal12m,
       patrimonioLiquido,
       numeroCotistas,
       totalCotas,
       liquidezDiaria,
-      vacanciaFisica: null,     // requer plano pago na brapi — preenchido pelo SI
-      vacanciaFinanceira: null,  // idem
+      vacanciaFisica: null,
+      vacanciaFinanceira: null,
       segmento,
       setor: null,
       tipo: tipoNorm,
-      taxaAdministracao: null,  // requer plano pago na brapi — preenchido pelo SI
+      taxaAdministracao: null,
       taxaGestao: null,
       score: null,
       competitors: [],
       fonte: "brapi",
       dataReferencia: new Date().toISOString().slice(0, 10),
     };
-
-    console.log(`[fiiScraper] brapi ${t} parsed:`, result);
 
     if (result.pvp == null && result.dividendYield == null && result.preco == null) return null;
 
@@ -359,7 +350,135 @@ async function fetchBrapi(ticker: string): Promise<FiiIndicators | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Fonte 2: Status Invest (scraping HTML — fallback)
+// Fonte 2: Investidor10 (scraping HTML — fallback 1)
+// ---------------------------------------------------------------------------
+async function scrapeInvestidor10(ticker: string): Promise<FiiIndicators | null> {
+  const t = ticker.toUpperCase();
+  const url = `https://investidor10.com.br/fiis/${t.toLowerCase()}/`;
+  try {
+    const res = await fetch(url, { headers: SCRAPE_HEADERS });
+    console.log(`[fiiScraper] Investidor10 ${t} STATUS:`, res.status);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    let pvp: number | null = null;
+    let dividendYield: number | null = null;
+    let valorPatrimonialCota: number | null = null;
+    let patrimonioLiquido: number | null = null;
+    let liquidezDiaria: number | null = null;
+    let vacanciaFisica: number | null = null;
+    let taxaAdministracao: number | null = null;
+    let numeroCotistas: number | null = null;
+    let totalCotas: number | null = null;
+    let segmento: string | null = null;
+    let ultimoDividendo: number | null = null;
+    let preco: number | null = null;
+    const competitors: string[] = [];
+
+    // Preço atual — geralmente num destaque no topo
+    $("._card-cotacao .value, .cotacao .value, [class*='price'] span, .stock-price").each((_, el) => {
+      if (preco == null) preco = parseDecimalBR($(el).text());
+    });
+
+    // Cards de indicadores — o Investidor10 usa estrutura de células com título + valor
+    $("._card, .cell, [class*='indicator'], [class*='_card']").each((_, el) => {
+      const titleEl = $(el).find("span, h3, .title, ._card-title").first();
+      const valueEl = $(el).find("._card-value, .value, strong, b").first();
+      const title = titleEl.text().trim().toLowerCase();
+      const valueRaw = valueEl.text().trim();
+
+      if (!title || !valueRaw) return;
+
+      if (title === "p/vp" || title === "p/vp ")
+        pvp = pvp ?? parseDecimalBR(valueRaw);
+      else if (title.includes("dy") && (title.includes("12m") || title.includes("yield")))
+        dividendYield = dividendYield ?? parseDecimalBR(valueRaw);
+      else if (title.includes("val. pat") || title.includes("vp/cota") || (title.includes("valor") && title.includes("patrimonial") && title.includes("cota")))
+        valorPatrimonialCota = valorPatrimonialCota ?? parseDecimalBR(valueRaw);
+      else if (title.includes("patrimônio") || title.includes("patrimonio"))
+        patrimonioLiquido = patrimonioLiquido ?? parseDecimalBR(valueRaw);
+      else if (title.includes("liquidez"))
+        liquidezDiaria = liquidezDiaria ?? parseDecimalBR(valueRaw);
+      else if (title.includes("vacância") || title.includes("vacancia"))
+        vacanciaFisica = vacanciaFisica ?? parseDecimalBR(valueRaw);
+      else if (title.includes("taxa") && title.includes("adm"))
+        taxaAdministracao = taxaAdministracao ?? parseDecimalBR(valueRaw);
+      else if (title.includes("cotistas"))
+        numeroCotistas = numeroCotistas ?? parseDecimalBR(valueRaw);
+      else if (title.includes("cotas emitidas") || title.includes("total de cotas"))
+        totalCotas = totalCotas ?? parseDecimalBR(valueRaw);
+      else if (title.includes("segmento") || title.includes("tipo"))
+        if (!segmento && valueRaw.length < 60) segmento = valueRaw;
+      else if (title.includes("último rendimento") || title.includes("ultimo rendimento") || title.includes("último dividendo"))
+        ultimoDividendo = ultimoDividendo ?? parseDecimalBR(valueRaw);
+    });
+
+    // Tabela de indicadores (estrutura alternativa do Investidor10)
+    $("table tr, .indicators-table tr").each((_, el) => {
+      const cells = $(el).find("td");
+      if (cells.length < 2) return;
+      const title = $(cells[0]).text().trim().toLowerCase();
+      const valueRaw = $(cells[1]).text().trim();
+
+      if (title.includes("p/vp"))                   pvp = pvp ?? parseDecimalBR(valueRaw);
+      else if (title.includes("dy") && title.includes("12")) dividendYield = dividendYield ?? parseDecimalBR(valueRaw);
+      else if (title.includes("val. pat") || (title.includes("valor") && title.includes("cota"))) valorPatrimonialCota = valorPatrimonialCota ?? parseDecimalBR(valueRaw);
+      else if (title.includes("patrimônio"))         patrimonioLiquido = patrimonioLiquido ?? parseDecimalBR(valueRaw);
+      else if (title.includes("liquidez"))           liquidezDiaria = liquidezDiaria ?? parseDecimalBR(valueRaw);
+      else if (title.includes("vacância"))           vacanciaFisica = vacanciaFisica ?? parseDecimalBR(valueRaw);
+      else if (title.includes("taxa") && title.includes("adm")) taxaAdministracao = taxaAdministracao ?? parseDecimalBR(valueRaw);
+      else if (title.includes("cotistas"))           numeroCotistas = numeroCotistas ?? parseDecimalBR(valueRaw);
+    });
+
+    // FIIs relacionados/concorrentes
+    $("a[href*='/fiis/']").each((_, el) => {
+      const href = $(el).attr("href") ?? "";
+      const match = href.match(/\/fiis\/([a-z]{4}11)\/?$/i);
+      if (match) {
+        const ct = match[1].toUpperCase();
+        if (ct !== t && !competitors.includes(ct) && competitors.length < 6)
+          competitors.push(ct);
+      }
+    });
+
+    if (pvp == null && dividendYield == null && valorPatrimonialCota == null) return null;
+
+    console.log(`[fiiScraper] Investidor10 ${t} parsed: pvp=${pvp} dy=${dividendYield} vpc=${valorPatrimonialCota}`);
+
+    return {
+      preco,
+      pvp,
+      valorPatrimonialCota,
+      dividendYield,
+      ultimoDividendo,
+      dyCAGR3y: null,
+      dyMedio12m: null,
+      patrimonioLiquido,
+      numeroCotistas,
+      totalCotas,
+      liquidezDiaria,
+      vacanciaFisica,
+      vacanciaFinanceira: null,
+      segmento,
+      setor: null,
+      tipo: null,
+      taxaAdministracao,
+      taxaGestao: null,
+      score: null,
+      competitors,
+      fonte: "investidor10",
+      dataReferencia: new Date().toISOString().slice(0, 10),
+    };
+  } catch (err) {
+    console.error(`[fiiScraper] Investidor10 ${ticker} ERROR:`, err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fonte 3: Status Invest (scraping HTML — último recurso)
 // ---------------------------------------------------------------------------
 async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null> {
   const url = `https://statusinvest.com.br/fundos-imobiliarios/${ticker.toLowerCase()}`;
@@ -409,10 +528,8 @@ async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null>
       if (title === "p/vp" || title === "p/vp ") {
         pvp = pvp ?? parseDecimalBR(valueStr);
       } else if (title.startsWith("dividend yield") && subtitle.includes("12m")) {
-        // Seleciona especificamente o DY de 12 meses
         dividendYield = dividendYield ?? parseDecimalBR(valueStr);
       } else if (title.startsWith("dividend yield") && dividendYield == null) {
-        // Fallback se não encontrar o subtítulo "12m"
         dividendYield = parseDecimalBR(valueStr);
       } else if (title.includes("val. patrimonial") || title.includes("valor patrimonial")) {
         valorPatrimonialCota = valorPatrimonialCota ?? parseDecimalBR(valueStr);
@@ -442,7 +559,7 @@ async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null>
       }
     });
 
-    // Preco atual
+    // Preço atual
     let preco: number | null = null;
     $("strong[title], .value strong").each((_, el) => {
       const parent = $(el).closest(".top-info, .info-top");
@@ -495,57 +612,6 @@ async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null>
 }
 
 // ---------------------------------------------------------------------------
-// Fonte 3: Funds Explorer (scraping HTML — fallback2)
-// ---------------------------------------------------------------------------
-async function scrapeFundsExplorer(ticker: string): Promise<FiiIndicators | null> {
-  const url = `https://www.fundsexplorer.com.br/funds/${ticker.toUpperCase()}`;
-  try {
-    const res = await fetch(url, { headers: SCRAPE_HEADERS });
-    if (!res.ok) return null;
-
-    const html = await res.text();
-    const $ = cheerio.load(html);
-
-    let pvp: number | null = null;
-    let dividendYield: number | null = null;
-    let valorPatrimonialCota: number | null = null;
-    let patrimonioLiquido: number | null = null;
-    let segmento: string | null = null;
-    let liquidezDiaria: number | null = null;
-
-    $("[class*='indicator'], [class*='detail'], .boxed-info, [class*='card']").each((_, el) => {
-      const title = $(el).find("[class*='title'], [class*='label'], span, h3, h4").first().text().trim().toLowerCase();
-      const valueRaw = $(el).find("[class*='value'], [class*='number'], p, strong, b").first().text().trim();
-      if (!title || !valueRaw) return;
-
-      if (title.includes("p/vp") || title === "pvp") pvp = pvp ?? parseDecimalBR(valueRaw);
-      else if (title.includes("dividend yield") || title === "dy") dividendYield = dividendYield ?? parseDecimalBR(valueRaw);
-      else if (title.includes("valor patrimonial") && title.includes("cota")) valorPatrimonialCota = valorPatrimonialCota ?? parseDecimalBR(valueRaw);
-      else if (title.includes("patrimônio líquido") || title.includes("patrimonio liquido")) patrimonioLiquido = patrimonioLiquido ?? parseDecimalBR(valueRaw);
-      else if (title.includes("segmento") || title.includes("tipo")) { if (!segmento && valueRaw.length < 50) segmento = valueRaw; }
-      else if (title.includes("liquidez")) liquidezDiaria = liquidezDiaria ?? parseDecimalBR(valueRaw);
-    });
-
-    if (pvp == null && dividendYield == null && valorPatrimonialCota == null) return null;
-
-    return {
-      preco: null, pvp, valorPatrimonialCota, dividendYield,
-      ultimoDividendo: null, dyCAGR3y: null, dyMedio12m: null,
-      patrimonioLiquido, numeroCotistas: null, totalCotas: null,
-      liquidezDiaria, vacanciaFisica: null, vacanciaFinanceira: null,
-      segmento, setor: null, tipo: null,
-      taxaAdministracao: null, taxaGestao: null,
-      score: null, competitors: [],
-      fonte: "fundsexplorer",
-      dataReferencia: new Date().toISOString().slice(0, 10),
-    };
-  } catch (err) {
-    console.error(`[fiiScraper] FundsExplorer ${ticker} ERROR:`, err);
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Merge: preenche campos nulos da primária com dados das fallbacks
 // ---------------------------------------------------------------------------
 function mergeIndicators(primary: FiiIndicators, ...fallbacks: (FiiIndicators | null)[]): FiiIndicators {
@@ -577,22 +643,24 @@ export async function fetchFiiIndicators(ticker: string): Promise<FiiIndicators>
     return cached;
   }
 
-  // Busca em paralelo nas três fontes
-  const [brapi, statusInvest, fundsExplorer] = await Promise.all([
+  // Busca em paralelo nas três fontes para melhor performance
+  const [brapi, investidor10, statusInvest] = await Promise.all([
     fetchBrapi(ticker),
+    scrapeInvestidor10(ticker),
     scrapeStatusInvest(ticker),
-    scrapeFundsExplorer(ticker),
   ]);
 
   let result: FiiIndicators = { ...EMPTY };
 
   if (brapi) {
-    // brapi é a primária — complementa com fallbacks para campos ausentes
-    result = mergeIndicators(brapi, statusInvest, fundsExplorer);
+    // BRAPI é primária — preenche campos faltantes com Investidor10, depois StatusInvest
+    result = mergeIndicators(brapi, investidor10, statusInvest);
+  } else if (investidor10) {
+    // BRAPI falhou — Investidor10 vira primária, StatusInvest como fallback
+    result = mergeIndicators(investidor10, statusInvest);
   } else if (statusInvest) {
-    result = mergeIndicators(statusInvest, fundsExplorer);
-  } else if (fundsExplorer) {
-    result = fundsExplorer;
+    // Último recurso
+    result = statusInvest;
   }
 
   // Calcula o score de qualidade ao final
@@ -602,4 +670,3 @@ export async function fetchFiiIndicators(ticker: string): Promise<FiiIndicators>
 
   return setCached(ticker, result);
 }
-
