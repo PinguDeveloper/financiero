@@ -54,11 +54,7 @@ function parseDecimalBR(raw: string | null | undefined): number | null {
 }
 
 // ---------------------------------------------------------------------------
-// Status Invest — estrutura real da página (jun/2025)
-//
-// Blocos .info com h3.title + strong para valores numéricos.
-// Patrimônio e VPC ficam em texto corrido próximos ao P/VP.
-// Segmento ANBIMA e FIIs relacionadas ficam na seção "Geral".
+// Status Invest
 // ---------------------------------------------------------------------------
 async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null> {
   const url = `https://statusinvest.com.br/fundos-imobiliarios/${ticker.toLowerCase()}`;
@@ -79,7 +75,22 @@ async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null>
     let dyCAGR3y: number | null = null;
     const competitors: string[] = [];
 
-    // ── Indicadores numéricos via blocos .info ────────────────────────────
+    // ── 1. JSON-LD: segmento (category) + patrimônio líquido (value) ──────
+    // <script type="application/ld+json">{ "category": "Papéis", "amount": { "value": 4316748113 } }
+    $('script[type="application/ld+json"]').each((_, el) => {
+      try {
+        const json = JSON.parse($(el).html() ?? "");
+        if (json["@type"] === "InvestmentFund") {
+          if (json.category && !segmento) segmento = String(json.category).trim();
+          const val = json?.amount?.value;
+          if (typeof val === "number" && val > 0 && patrimonioLiquido == null) {
+            patrimonioLiquido = val;
+          }
+        }
+      } catch { /* ignora JSON inválido */ }
+    });
+
+    // ── 2. Indicadores numéricos via blocos .info ─────────────────────────
     $(".info").each((_, el) => {
       const titleEl = $(el).find("h3.title, .title").first();
       const title = titleEl.text().trim().toLowerCase();
@@ -87,48 +98,40 @@ async function scrapeStatusInvest(ticker: string): Promise<FiiIndicators | null>
 
       if (!title) return;
 
-      if (title === "p/vp") {
+      if (title === "p/vp" || title === "p/vp ") {
         pvp = pvp ?? parseDecimalBR(valueStr);
       } else if (title.startsWith("dividend yield")) {
         dividendYield = dividendYield ?? parseDecimalBR(valueStr);
-      } else if (title.includes("val. patrimonial") || title.includes("valor patrimonial")) {
+      } else if (
+        title.includes("val. patrimonial") ||
+        title.includes("val. patrim") ||
+        title.includes("valor patrimonial")
+      ) {
+        // VPC: strong.value dentro do bloco
         valorPatrimonialCota = valorPatrimonialCota ?? parseDecimalBR(valueStr);
+
+        // PL: span.sub-value com "R$ 4.316.748.113" (fallback caso JSON-LD falhe)
+        if (patrimonioLiquido == null) {
+          const subValue = $(el).find(".sub-value").first().text();
+          const matchPL = subValue.match(/[\d.]+(?:,\d+)?/);
+          if (matchPL) {
+            patrimonioLiquido = parseDecimalBR(matchPL[0]);
+          }
+        }
       } else if (title.includes("dy cagr (3")) {
         dyCAGR3y = dyCAGR3y ?? parseDecimalBR(valueStr);
       }
+    });
 
-      // Patrimônio líquido aparece como texto auxiliar dentro do bloco Val. patrimonial
-      // Ex: "Patrimônio R$ 4.316.748.113"
-      const allText = $(el).text();
-      const matchPL = allText.match(/Patrimônio\s+R\$\s*([\d.]+(?:,\d+)?)/i);
-      if (matchPL && patrimonioLiquido == null) {
-        patrimonioLiquido = parseDecimalBR(matchPL[1]);
+    // ── 3. Segmento ANBIMA: h3.title "Segmento ANBIMA" + strong.value ─────
+    $("h3.title").each((_, el) => {
+      if ($(el).text().trim().toLowerCase() === "segmento anbima") {
+        const val = $(el).closest("div").find("strong.value").first().text().trim();
+        if (val && val.length < 60 && !setor) setor = val;
       }
     });
 
-    // ── Segmento ANBIMA ───────────────────────────────────────────────────
-    // Aparece como: <span>Segmento ANBIMA</span> <strong>Logística</strong>
-    // ou dentro de um item de lista com texto "Segmento ANBIMA"
-    $("*").each((_, el) => {
-      if ($(el).children().length > 2) return; // ignora containers grandes
-      const text = $(el).text().trim();
-      if (text.toLowerCase() === "segmento anbima") {
-        const val = $(el).next().text().trim() || $(el).parent().find("strong, b, span").last().text().trim();
-        if (val && val.length < 60) setor = val;
-      }
-    });
-
-    // ── Segmento do fundo (ex: "Papéis") ────────────────────────────────
-    // Aparece em link: href="/fundos-imobiliarios/setor/.../papeis/..."
-    $("a[href*='/fundos-imobiliarios/setor/']").each((_, el) => {
-      const text = $(el).text().trim();
-      if (text && text.length < 40 && segmento == null) {
-        segmento = text;
-      }
-    });
-
-    // ── FIIs relacionadas (concorrentes) ─────────────────────────────────
-    // Aparece em links como: href="/fundos-imobiliarios/hgcr11"
+    // ── 4. FIIs relacionadas (concorrentes) ──────────────────────────────
     $("a[href*='/fundos-imobiliarios/']").each((_, el) => {
       const href = $(el).attr("href") ?? "";
       const match = href.match(/\/fundos-imobiliarios\/([a-z]{4}11)$/i);
@@ -254,4 +257,3 @@ export async function fetchFiiIndicators(ticker: string): Promise<FiiIndicators>
 
   return setCached(ticker, result);
 }
-
