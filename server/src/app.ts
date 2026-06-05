@@ -25,10 +25,10 @@ export function createApp() {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
-        if (!origin) {
-          callback(null, true);
-          return;
-        }
+        if (!origin || origin === "null") {
+  callback(null, true);
+  return;
+}
         if (allowed.includes(origin)) {
           callback(null, true);
           return;
