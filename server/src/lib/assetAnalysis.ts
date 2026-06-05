@@ -1,3 +1,5 @@
+import { fetchFiiIndicators, type FiiIndicators } from "./fiiScraper.js";
+
 export type AssetKind =
   | "stock"
   | "fii"
@@ -121,89 +123,6 @@ function setCached<T>(key: string, value: T): T {
   return value;
 }
 
-// ---------------------------------------------------------------------------
-// Yahoo Finance — crumb (necessário desde 2024 para quoteSummary)
-// ---------------------------------------------------------------------------
-let yahooCrumbCache: { crumb: string; cookie: string; expiresAt: number } | null = null;
-
-async function getYahooCrumb(): Promise<{ crumb: string; cookie: string } | null> {
-  if (yahooCrumbCache && yahooCrumbCache.expiresAt > Date.now()) {
-    return { crumb: yahooCrumbCache.crumb, cookie: yahooCrumbCache.cookie };
-  }
-
-  try {
-    // Usa o endpoint leve de consent para obter apenas os cookies essenciais
-    // (evita HeadersOverflowError que ocorre ao visitar finance.yahoo.com diretamente)
-    const consentRes = await fetch(
-      "https://consent.yahoo.com/v2/collectConsent?sessionId=1_cc-session_placeholder",
-      {
-        headers: {
-          "User-Agent": httpHeaders["User-Agent"],
-          "Accept": "text/html",
-        },
-        redirect: "manual", // não seguir redirects — só queremos os cookies do Set-Cookie
-      }
-    );
-
-    // Extrai cookies do header Set-Cookie (limitado, sem overflow)
-    const rawCookie = consentRes.headers.get("set-cookie") ?? "";
-    const cookieHeader = rawCookie
-      .split(",")
-      .map((c) => c.split(";")[0].trim())
-      .filter((c) => c.includes("="))
-      .slice(0, 5) // limita a 5 cookies para evitar overflow
-      .join("; ");
-
-    // Busca o crumb com os cookies obtidos
-    const crumbRes = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
-      headers: {
-        "User-Agent": httpHeaders["User-Agent"],
-        "Accept": "text/plain, */*",
-        "Referer": "https://finance.yahoo.com",
-        ...(cookieHeader ? { "Cookie": cookieHeader } : {}),
-      },
-    });
-
-    console.log("YAHOO CRUMB STATUS:", crumbRes.status);
-
-    if (!crumbRes.ok) {
-      // Tenta sem cookie como último recurso
-      const crumbRes2 = await fetch("https://query2.finance.yahoo.com/v1/test/getcrumb", {
-        headers: {
-          "User-Agent": httpHeaders["User-Agent"],
-          "Accept": "text/plain, */*",
-          "Referer": "https://finance.yahoo.com",
-        },
-      });
-      if (!crumbRes2.ok) {
-        console.error("YAHOO CRUMB ERROR (sem cookie):", crumbRes2.status);
-        return null;
-      }
-      const crumb2 = (await crumbRes2.text()).trim();
-      if (!crumb2 || crumb2.includes("<") || crumb2.length < 5) {
-        console.error("YAHOO CRUMB INVALID:", crumb2.slice(0, 50));
-        return null;
-      }
-      console.log("YAHOO CRUMB OK (sem cookie):", crumb2.slice(0, 8) + "...");
-      yahooCrumbCache = { crumb: crumb2, cookie: "", expiresAt: Date.now() + 3600_000 };
-      return { crumb: crumb2, cookie: "" };
-    }
-
-    const crumb = (await crumbRes.text()).trim();
-    if (!crumb || crumb.includes("<") || crumb.length < 5) {
-      console.error("YAHOO CRUMB INVALID:", crumb.slice(0, 50));
-      return null;
-    }
-
-    console.log("YAHOO CRUMB OK:", crumb.slice(0, 8) + "...");
-    yahooCrumbCache = { crumb, cookie: cookieHeader, expiresAt: Date.now() + 3600_000 };
-    return { crumb, cookie: cookieHeader };
-  } catch (err) {
-    console.error("YAHOO CRUMB FETCH ERROR:", err);
-    return null;
-  }
-}
-
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -240,15 +159,7 @@ function toIsoDate(value: unknown): string | null {
   return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
 }
 
-function pickMetric(row: Record<string, unknown>, keys: string[]): number | null {
-  for (const key of keys) {
-    if (key in row) {
-      const n = toNumber(row[key]);
-      if (n != null) return n;
-    }
-  }
-  return null;
-}
+
 
 function scoreHigher(value: number | null, good: number, bad: number): number {
   if (value == null) return 45;
@@ -303,16 +214,6 @@ type YahooChartResult = {
   };
 };
 
-type YahooQuoteSummary = {
-  summaryProfile?: Record<string, unknown>;
-  summaryDetail?: Record<string, unknown>;
-  financialData?: Record<string, unknown>;
-  defaultKeyStatistics?: Record<string, unknown>;
-  incomeStatementHistory?: Record<string, unknown>;
-  balanceSheetHistory?: Record<string, unknown>;
-  price?: Record<string, unknown>;
-};
-
 // ---------------------------------------------------------------------------
 // Yahoo Finance — chart (histórico + dividendos de eventos)
 // ---------------------------------------------------------------------------
@@ -346,75 +247,6 @@ async function yahooChart(symbol: string, range: string): Promise<YahooChartResu
 }
 
 // ---------------------------------------------------------------------------
-// Yahoo Finance — quoteSummary (fundamentos)
-// Tenta v11 primeiro; se falhar, tenta v10 (formato ligeiramente diferente)
-// ---------------------------------------------------------------------------
-async function yahooSummary(symbol: string): Promise<YahooQuoteSummary | null> {
-  const cacheKey = `yahoo:summary:${symbol}`;
-  const cached = getCached<YahooQuoteSummary>(cacheKey);
-  if (cached) return cached;
-
-  const modules = [
-    "summaryProfile",
-    "summaryDetail",
-    "financialData",
-    "defaultKeyStatistics",
-    "incomeStatementHistory",
-    "balanceSheetHistory",
-    "price",
-  ].join(",");
-
-  // Obtém crumb + cookie necessários desde 2024
-  const auth = await getYahooCrumb();
-
-  const fetchSummary = async (version: "v11" | "v10"): Promise<YahooQuoteSummary | null> => {
-    const qs = new URLSearchParams({ modules, corsDomain: "finance.yahoo.com" });
-    if (auth?.crumb) qs.set("crumb", auth.crumb);
-    const url = `https://query1.finance.yahoo.com/${version}/finance/quoteSummary/${symbol}?${qs}`;
-    try {
-      const res = await fetch(url, {
-        headers: {
-          ...httpHeaders,
-          "Accept-Language": "en-US,en;q=0.9",
-          "Origin": "https://finance.yahoo.com",
-          "Referer": `https://finance.yahoo.com/quote/${symbol}`,
-          ...(auth?.cookie ? { "Cookie": auth.cookie } : {}),
-        },
-      });
-      console.log(`YAHOO SUMMARY (${version}):`, symbol, "STATUS:", res.status);
-      if (!res.ok) {
-        console.error(`YAHOO SUMMARY (${version}) ERROR:`, res.status);
-        return null;
-      }
-      const json = (await res.json()) as {
-        quoteSummary?: { result?: YahooQuoteSummary[]; error?: unknown };
-      };
-      const result = json?.quoteSummary?.result?.[0] ?? null;
-      if (result) {
-        const fd = result.financialData as Record<string, unknown> | undefined;
-        const ks = result.defaultKeyStatistics as Record<string, unknown> | undefined;
-        console.log(`YAHOO SUMMARY (${version}) FIELDS:`, {
-          trailingPE:         ks?.trailingPE,
-          priceToBook:        ks?.priceToBook,
-          enterpriseToEbitda: ks?.enterpriseToEbitda,
-          returnOnEquity:     fd?.returnOnEquity,
-          profitMargins:      fd?.profitMargins,
-          debtToEquity:       fd?.debtToEquity,
-          dividendYield:      (result.summaryDetail as Record<string, unknown> | undefined)?.dividendYield,
-        });
-        setCached(cacheKey, result);
-      }
-      return result;
-    } catch (err) {
-      console.error(`YAHOO SUMMARY (${version}) FETCH ERROR:`, err);
-      return null;
-    }
-  };
-
-  return (await fetchSummary("v11")) ?? (await fetchSummary("v10"));
-}
-
-// ---------------------------------------------------------------------------
 // Resolve o símbolo Yahoo para cada kind
 // ---------------------------------------------------------------------------
 function yahooSymbolFor(ticker: string, kind: AssetKind): string {
@@ -423,34 +255,28 @@ function yahooSymbolFor(ticker: string, kind: AssetKind): string {
     case "crypto":   return `${ticker}-USD`;
     case "bdr": {
       const base = bdrBaseTickerUs(ticker);
-      return base ?? `${ticker}.SA`; // fallback: tenta .SA mas fundamentos serão vazios
+      return base ?? `${ticker}.SA`;
     }
     default: return `${ticker}.SA`;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Classifica o kind com base no ticker + dados opcionais do Yahoo
+// Classifica o kind com base no ticker
 // ---------------------------------------------------------------------------
-function classifyKind(ticker: string, yahooData?: YahooQuoteSummary): AssetKind {
-  const quoteType = firstString(
-    (yahooData?.price as Record<string, unknown> | undefined)?.quoteType,
-    (yahooData?.summaryProfile as Record<string, unknown> | undefined)?.quoteType,
-  )?.toLowerCase() ?? "";
-
+function classifyKind(ticker: string): AssetKind {
   const t = ticker.toUpperCase();
 
   const cryptos = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "BNB", "AVAX"];
   if (cryptos.includes(t)) return "crypto";
 
   const etfs = ["BOVA11","IVVB11","SMAL11","HASH11","DIVO11","XFIX11","GOVE11","BOVV11","SPXI11","NASD11"];
-  if (etfs.includes(t) || quoteType === "etf") return "etf";
+  if (etfs.includes(t)) return "etf";
 
   if (t.endsWith("34") || t.endsWith("35") || t.endsWith("39")) return "bdr";
 
   const fiiPattern = /^[A-Z]{4}11$/;
   if (fiiPattern.test(t) && !etfs.includes(t)) return "fii";
-  if (quoteType.includes("fii") || quoteType === "trust") return "fii";
 
   if (/^[A-Z]{1,5}$/.test(t) && !/\d/.test(t)) return "us_stock";
 
@@ -517,145 +343,47 @@ function parseYahooDividends(chart: YahooChartResult): AssetDividend[] {
 }
 
 // ---------------------------------------------------------------------------
-// Resultados anuais (fundamentos do Yahoo)
+// Resultados anuais — sem Yahoo Summary, retorna vazio para FIIs
 // ---------------------------------------------------------------------------
-function annualFromYahoo(summary: YahooQuoteSummary): AssetAnnualResult[] {
-  const income = ((summary.incomeStatementHistory as Record<string, unknown> | undefined)
-    ?.incomeStatementHistory ?? []) as unknown[];
-  const balance = ((summary.balanceSheetHistory as Record<string, unknown> | undefined)
-    ?.balanceSheetStatements ?? []) as unknown[];
-
-  const byYear = new Map<string, AssetAnnualResult>();
-
-  for (const row of income) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as Record<string, unknown>;
-    const endDate = (r.endDate as Record<string, unknown> | undefined)?.fmt ?? r.endDate;
-    const date = toIsoDate(endDate);
-    if (!date) continue;
-    const year = date.slice(0, 4);
-    byYear.set(year, {
-      year,
-      revenue: pickMetric(r, ["totalRevenue", "revenue"]),
-      profit: pickMetric(r, ["netIncome", "netIncomeApplicableToCommonShares"]),
-      equity: null,
-    });
-  }
-
-  for (const row of balance) {
-    if (!row || typeof row !== "object") continue;
-    const r = row as Record<string, unknown>;
-    const endDate = (r.endDate as Record<string, unknown> | undefined)?.fmt ?? r.endDate;
-    const date = toIsoDate(endDate);
-    if (!date) continue;
-    const year = date.slice(0, 4);
-    const current = byYear.get(year) ?? { year, revenue: null, profit: null, equity: null };
-    current.equity = pickMetric(r, ["totalStockholderEquity","stockholdersEquity","totalEquityGrossMinorityInterest"]);
-    byYear.set(year, current);
-  }
-
-  return [...byYear.values()].sort((a, b) => a.year.localeCompare(b.year)).slice(-8);
+function annualFromYahoo(): AssetAnnualResult[] {
+  return [];
 }
 
 // ---------------------------------------------------------------------------
-// Extrai um valor numérico de campos Yahoo que podem ser { raw, fmt } ou number
-// ---------------------------------------------------------------------------
-function yahooVal(obj: Record<string, unknown> | undefined, key: string): number | null {
-  if (!obj) return null;
-  const v = obj[key];
-  if (v == null) return null;
-  if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  if (typeof v === "object") return toNumber((v as Record<string, unknown>).raw);
-  return toNumber(v);
-}
-
-// ---------------------------------------------------------------------------
-// Constrói indicadores a partir do merge brapi + Yahoo summary
+// Constrói indicadores — FIIs usam dados do scraper, ações usam brapi
 // ---------------------------------------------------------------------------
 function buildIndicators(
   kind: AssetKind,
   brapi: Record<string, unknown>,
-  yahoo: YahooQuoteSummary | null,
+  scraped: FiiIndicators | null,
 ): AssetIndicator[] {
-  const fd  = (yahoo?.financialData      as Record<string, unknown> | undefined) ?? {};
-  const ks  = (yahoo?.defaultKeyStatistics as Record<string, unknown> | undefined) ?? {};
-  const sd  = (yahoo?.summaryDetail       as Record<string, unknown> | undefined) ?? {};
-  const pr  = (yahoo?.price               as Record<string, unknown> | undefined) ?? {};
-
-  // Yahoo retorna valores como { raw: number, fmt: string } OU direto como number
-  // Buscamos nos múltiplos módulos onde cada campo pode aparecer
-  const pe        = firstNumber(
-    yahooVal(ks, "trailingPE"), yahooVal(ks, "forwardPE"),
-    yahooVal(sd, "trailingPE"),
-    brapi.priceEarnings,
-  );
-  const pvp       = firstNumber(
-    yahooVal(ks, "priceToBook"),
-    yahooVal(sd, "priceToBook"),
-    brapi.priceToBook,
-  );
-  const roe       = firstNumber(
-    yahooVal(fd, "returnOnEquity"),
-    yahooVal(ks, "returnOnEquity"),
-  );
-  const roic      = firstNumber(
-    yahooVal(fd, "returnOnInvestedCapital"),
-    yahooVal(fd, "returnOnAssets"),
-    yahooVal(ks, "returnOnAssets"),
-  );
-  const evEbitda  = firstNumber(
-    yahooVal(ks, "enterpriseToEbitda"),
-    yahooVal(sd, "enterpriseToEbitda"),
-  );
-  const dy        = firstNumber(
-    yahooVal(sd, "dividendYield"),
-    yahooVal(sd, "trailingAnnualDividendYield"),
-    yahooVal(pr, "dividendYield"),
-    yahooVal(pr, "trailingAnnualDividendYield"),
-    brapi.dividendYield,
-  );
-  const margin    = firstNumber(
-    yahooVal(fd, "profitMargins"),
-    yahooVal(ks, "profitMargins"),
-  );
-  const debtEbitda = firstNumber(
-    yahooVal(fd, "debtToEquity"),  // D/E como proxy quando não há D/EBITDA
-    yahooVal(ks, "debtToEquity"),
-  );
-  const liquidity = firstNumber(
-    yahooVal(sd, "averageVolume"),
-    yahooVal(sd, "averageVolume10days"),
-    yahooVal(pr, "averageVolume"),
-    brapi.regularMarketVolume,
-  );
-  const equity    = firstNumber(
-    yahooVal(ks, "bookValue"),
-    yahooVal(fd, "totalCash"),
-  );
-  const vpc       = firstNumber(yahooVal(ks, "bookValue"));
-
-  // Normaliza ROE/ROIC/margin/dy que o Yahoo retorna como decimal (0.25 = 25%)
-  const pct = (v: number | null) => (v != null && Math.abs(v) <= 1 ? v * 100 : v);
+  const liquidity = firstNumber(brapi.regularMarketVolume);
 
   if (kind === "fii" || kind === "etf") {
     return [
-      { key: "pvp",      label: "P/VP",                  value: pvp,        unit: "number"   },
-      { key: "dy",       label: "Dividend Yield",         value: pct(dy),    unit: "percent"  },
-      { key: "liquidity",label: "Liquidez",               value: liquidity,  unit: "currency" },
-      { key: "equity",   label: "Patrimônio Líquido",     value: equity,     unit: "currency" },
-      { key: "vpc",      label: "Valor patrimonial/cota", value: vpc,        unit: "currency" },
+      { key: "pvp",      label: "P/VP",                  value: scraped?.pvp                  ?? null, unit: "number"   },
+      { key: "dy",       label: "Dividend Yield",         value: scraped?.dividendYield        ?? null, unit: "percent"  },
+      { key: "liquidity",label: "Liquidez",               value: liquidity,                             unit: "currency" },
+      { key: "equity",   label: "Patrimônio Líquido",     value: scraped?.patrimonioLiquido    ?? null, unit: "currency" },
+      { key: "vpc",      label: "Valor patrimonial/cota", value: scraped?.valorPatrimonialCota ?? null, unit: "currency" },
     ];
   }
 
+  // Ações/BDRs/cripto — brapi gratuito tem P/L, P/VP, DY
+  const pe        = firstNumber(brapi.priceEarnings);
+  const pvp       = firstNumber(brapi.priceToBook);
+  const dy        = firstNumber(brapi.dividendYield);
+  const pct = (v: number | null) => (v != null && Math.abs(v) <= 1 ? v * 100 : v);
+
   return [
-    { key: "pe",         label: "P/L",                   value: pe,          unit: "number"  },
-    { key: "pvp",        label: "P/VP",                  value: pvp,         unit: "number"  },
-    { key: "roe",        label: "ROE",                   value: pct(roe),    unit: "percent" },
-    { key: "roic",       label: "ROIC",                  value: pct(roic),   unit: "percent" },
-    { key: "evEbitda",   label: "EV/EBITDA",             value: evEbitda,    unit: "number"  },
-    { key: "dy",         label: "Dividend Yield",         value: pct(dy),    unit: "percent" },
-    { key: "margin",     label: "Margem Líquida",         value: pct(margin), unit: "percent" },
-    { key: "debtEbitda", label: "Dívida Líquida/EBITDA", value: debtEbitda,  unit: "number"  },
+    { key: "pe",         label: "P/L",                   value: pe,       unit: "number"  },
+    { key: "pvp",        label: "P/VP",                  value: pvp,      unit: "number"  },
+    { key: "roe",        label: "ROE",                   value: null,     unit: "percent" },
+    { key: "roic",       label: "ROIC",                  value: null,     unit: "percent" },
+    { key: "evEbitda",   label: "EV/EBITDA",             value: null,     unit: "number"  },
+    { key: "dy",         label: "Dividend Yield",         value: pct(dy), unit: "percent" },
+    { key: "margin",     label: "Margem Líquida",         value: null,    unit: "percent" },
+    { key: "debtEbitda", label: "Dívida Líquida/EBITDA", value: null,     unit: "number"  },
   ];
 }
 
@@ -697,8 +425,8 @@ function calculateScore(
       ? average([scoreHigher(dy, 8, 3)])
       : average([scoreHigher(roe, 18, 4), scoreHigher(roic, 14, 3), scoreHigher(margin, 15, 2)]);
 
-  const growth        = scoreHigher(growthPct, 12, -3);
-  const dividends     = scoreHigher(dy, kind === "fii" ? 10 : 7, 1);
+  const growth          = scoreHigher(growthPct, 12, -3);
+  const dividends       = scoreHigher(dy, kind === "fii" ? 10 : 7, 1);
   const financialHealth =
     kind === "fii"
       ? average([scoreHigher(indicatorValue(indicators, "liquidity"), 1_000_000, 50_000)])
@@ -802,66 +530,55 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
 
   const brapiRange = ["1d","5d","1mo","3mo"].includes(range) ? range : "3mo";
 
-  // ── 1. Classificação inicial (só ticker, sem dados ainda) ──────────────
-  const detectedKind = classifyKind(ticker);
+  // ── 1. Classificação do kind ───────────────────────────────────────────
+  const kind = classifyKind(ticker);
 
-  // ── 2. Brapi: preço + histórico (gratuito, sempre) ────────────────────
-  const brapiData = await brapiJson<{ results?: Array<Record<string, unknown>> }>(
-    `quote/${encodeURIComponent(ticker)}`,
-    { range: brapiRange, interval: brapiRange === "1d" ? "5m" : "1d" },
-  );
-  const brapiFirst = brapiData?.results?.[0] ?? null;
-  console.log("BRAPI FIRST:", { ticker, existe: !!brapiFirst });
-
-  // ── 3. Yahoo: fundamentos ─────────────────────────────────────────────
-  // Para BDRs usa o ticker americano base; para os demais usa símbolo .SA ou direto
-  const fundamentalSymbol =
-    detectedKind === "bdr"
-      ? (bdrBaseTickerUs(ticker) ?? yahooSymbolFor(ticker, detectedKind))
-      : yahooSymbolFor(ticker, detectedKind);
-
-  const [yahooSummaryData, yahooChartData] = await Promise.all([
-    yahooSummary(fundamentalSymbol),
-    yahooChart(yahooSymbolFor(ticker, detectedKind), range), // histórico
+  // ── 2. Brapi + Yahoo Chart + Scraper em paralelo ───────────────────────
+  const [brapiData, yahooChartData, fiiScraped] = await Promise.all([
+    brapiJson<{ results?: Array<Record<string, unknown>> }>(
+      `quote/${encodeURIComponent(ticker)}`,
+      { range: brapiRange, interval: brapiRange === "1d" ? "5m" : "1d" },
+    ),
+    yahooChart(yahooSymbolFor(ticker, kind), range),
+    // Scraping só para FIIs e ETFs — ações ficam null
+    (kind === "fii" || kind === "etf") ? fetchFiiIndicators(ticker) : Promise.resolve(null),
   ]);
 
-  console.log("YAHOO SUMMARY:", fundamentalSymbol, "ok:", !!yahooSummaryData);
-  console.log("YAHOO CHART:", yahooSymbolFor(ticker, detectedKind), "ok:", !!yahooChartData);
+  const brapiFirst = brapiData?.results?.[0] ?? null;
+  console.log("BRAPI FIRST:", { ticker, existe: !!brapiFirst });
+  console.log("YAHOO CHART:", yahooSymbolFor(ticker, kind), "ok:", !!yahooChartData);
+  console.log("FII SCRAPED:", { ticker, pvp: fiiScraped?.pvp, dy: fiiScraped?.dividendYield });
 
-  // ── 4. Precisa de pelo menos uma fonte de preço ────────────────────────
+  // ── 3. Precisa de pelo menos uma fonte de preço ────────────────────────
   const hasPrice = !!brapiFirst || !!yahooChartData;
   if (!hasPrice) {
     console.error(`Nenhuma fonte retornou dados para ${ticker}`);
     return null;
   }
 
-  // ── 5. Kind final (refina com dados do Yahoo) ─────────────────────────
-  const kind = classifyKind(ticker, yahooSummaryData ?? undefined);
-
-  // ── 6. Preço: brapi tem prioridade (moeda BRL); Yahoo como fallback ────
-  const brapiPrice   = firstNumber(brapiFirst?.regularMarketPrice);
+  // ── 4. Preço e variação ────────────────────────────────────────────────
+  const brapiPrice     = firstNumber(brapiFirst?.regularMarketPrice);
   const yahooMetaPrice = firstNumber(
     (yahooChartData?.meta as Record<string, unknown> | undefined)?.regularMarketPrice,
   );
-  const price          = brapiPrice ?? yahooMetaPrice;
-  const changePercent  = firstNumber(
+  const price         = brapiPrice ?? yahooMetaPrice;
+  const changePercent = firstNumber(
     brapiFirst?.regularMarketChangePercent,
     (yahooChartData?.meta as Record<string, unknown> | undefined)?.regularMarketChangePercent,
   );
 
-  // ── 7. Nome, setor, segmento ──────────────────────────────────────────
-  const profile = (yahooSummaryData?.summaryProfile as Record<string, unknown> | undefined) ?? {};
+  // ── 5. Nome, setor, segmento ──────────────────────────────────────────
   const name    = firstString(
     brapiFirst?.longName,
     brapiFirst?.shortName,
-    (yahooSummaryData?.price as Record<string, unknown> | undefined)?.longName,
-    (yahooSummaryData?.price as Record<string, unknown> | undefined)?.shortName,
+    (yahooChartData?.meta as Record<string, unknown> | undefined)?.longName,
+    (yahooChartData?.meta as Record<string, unknown> | undefined)?.shortName,
     ticker,
   ) ?? ticker;
-  const sector  = firstString(profile.sector,   brapiFirst?.sector)   ?? null;
-  const segment = firstString(profile.industry, brapiFirst?.industry) ?? null;
+  const sector  = firstString(brapiFirst?.sector)   ?? null;
+  const segment = firstString(brapiFirst?.industry) ?? null;
 
-  // ── 8. Histórico ──────────────────────────────────────────────────────
+  // ── 6. Histórico ──────────────────────────────────────────────────────
   const history = yahooChartData
     ? (() => {
         const pts = parseYahooHistory(yahooChartData);
@@ -869,29 +586,25 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
       })()
     : normalizeHistory(brapiFirst?.historicalDataPrice);
 
-  // ── 9. Dividendos ─────────────────────────────────────────────────────
-  // Para FII/ETF/stock: eventos do Yahoo chart (range 1y garante 12m de histórico)
-  // Para ações com chart range curto: tenta buscar chart com 1y separado para dividendos
+  // ── 7. Dividendos ─────────────────────────────────────────────────────
   let dividends: AssetDividend[] = [];
 
   if (yahooChartData?.events?.dividends) {
     dividends = parseYahooDividends(yahooChartData);
   }
 
-  // Se range não é 1y e dividendos vieram vazios, busca chart 1y só para dividendos
   if (dividends.length === 0 && range !== "1y") {
     const chart1y = await yahooChart(yahooSymbolFor(ticker, kind), "1y");
     if (chart1y?.events?.dividends) dividends = parseYahooDividends(chart1y);
   }
 
-  // Fallback: dividendos da brapi (plano pago)
   if (dividends.length === 0) {
     dividends = normalizeDividends(
       (brapiFirst?.dividendsData as Record<string, unknown> | undefined)?.cashDividends,
     );
   }
 
-  // ── 10. DY 12 meses calculado a partir dos dividendos coletados ────────
+  // ── 8. DY 12 meses ────────────────────────────────────────────────────
   const oneYearAgo = new Date();
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const dividend12m = dividends
@@ -900,15 +613,15 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   const dividendYield12m =
     price && price > 0 && dividend12m > 0 ? (dividend12m / price) * 100 : null;
 
-  // ── 11. Indicadores, score, análise ───────────────────────────────────
-  const indicators   = buildIndicators(kind, brapiFirst ?? {}, yahooSummaryData);
-  const annualResults= annualFromYahoo(yahooSummaryData ?? {});
-  const atlasScore   = calculateScore(kind, indicators, annualResults, dividendYield12m);
+  // ── 9. Indicadores, score, análise ────────────────────────────────────
+  const indicators    = buildIndicators(kind, brapiFirst ?? {}, fiiScraped);
+  const annualResults = annualFromYahoo();
+  const atlasScore    = calculateScore(kind, indicators, annualResults, dividendYield12m);
 
-  // Logo: brapi tem URLs prontas; fallback para clearbit usando o símbolo US
+  // ── 10. Logo ──────────────────────────────────────────────────────────
   const logoUrl = firstString(
     brapiFirst?.logourl,
-    detectedKind === "bdr"
+    kind === "bdr"
       ? `https://logo.clearbit.com/${(bdrBaseTickerUs(ticker) ?? "").toLowerCase()}.com`
       : null,
   );
@@ -935,3 +648,4 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     automaticAnalysis: textAnalysis(kind, indicators, atlasScore, dividendYield12m, annualResults),
   };
 }
+
