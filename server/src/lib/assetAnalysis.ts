@@ -159,8 +159,6 @@ function toIsoDate(value: unknown): string | null {
   return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
 }
 
-
-
 function scoreHigher(value: number | null, good: number, bad: number): number {
   if (value == null) return 45;
   if (value >= good) return 100;
@@ -363,6 +361,7 @@ function buildIndicators(
     return [
       { key: "pvp",      label: "P/VP",                  value: scraped?.pvp                  ?? null, unit: "number"   },
       { key: "dy",       label: "Dividend Yield",         value: scraped?.dividendYield        ?? null, unit: "percent"  },
+      { key: "dyCAGR3y", label: "Crescimento DY (3a)",   value: scraped?.dyCAGR3y             ?? null, unit: "percent"  }, // ← CORREÇÃO 3
       { key: "liquidity",label: "Liquidez",               value: liquidity,                             unit: "currency" },
       { key: "equity",   label: "Patrimônio Líquido",     value: scraped?.patrimonioLiquido    ?? null, unit: "currency" },
       { key: "vpc",      label: "Valor patrimonial/cota", value: scraped?.valorPatrimonialCota ?? null, unit: "currency" },
@@ -575,8 +574,10 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     (yahooChartData?.meta as Record<string, unknown> | undefined)?.shortName,
     ticker,
   ) ?? ticker;
-  const sector  = firstString(brapiFirst?.sector)   ?? null;
-  const segment = firstString(brapiFirst?.industry) ?? null;
+
+  // CORREÇÃO 1: scraper tem prioridade sobre brapi para setor/segmento
+  const sector  = firstString(fiiScraped?.setor,    brapiFirst?.sector)   ?? null;
+  const segment = firstString(fiiScraped?.segmento, brapiFirst?.industry) ?? null;
 
   // ── 6. Histórico ──────────────────────────────────────────────────────
   const history = yahooChartData
@@ -642,10 +643,12 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     dividendYield12m,
     lastDividend: dividends[0] ?? null,
     annualResults,
-    competitors: competitorsFor(sector ?? segment, ticker),
+    // CORREÇÃO 2: FIIs/ETFs usam lista de concorrentes do scraper quando disponível
+    competitors: (kind === "fii" || kind === "etf") && fiiScraped?.competitors?.length
+      ? fiiScraped.competitors
+      : competitorsFor(sector ?? segment, ticker),
     news: newsFor(ticker, name),
     atlasScore,
     automaticAnalysis: textAnalysis(kind, indicators, atlasScore, dividendYield12m, annualResults),
   };
 }
-
