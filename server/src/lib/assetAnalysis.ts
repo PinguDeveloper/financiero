@@ -1,5 +1,5 @@
-import { fetchFiiIndicators, scrapeFiiDividends, type FiiIndicators } from "./fiiScraper.js";
-import { fetchStockIndicators, type StockIndicators } from "./stockScraper.js";
+import { fetchFiiIndicators, type FiiIndicators } from "./fiiScraper.js";
+import { fetchStockIndicators, fetchStockAnnualResults, type StockIndicators } from "./stockScraper.js";
 
 export type AssetKind =
   | "stock"
@@ -361,9 +361,6 @@ function parseYahooDividends(chart: YahooChartResult): AssetDividend[] {
 // ---------------------------------------------------------------------------
 // Resultados anuais — sem Yahoo Summary, retorna vazio para FIIs
 // ---------------------------------------------------------------------------
-function annualFromYahoo(): AssetAnnualResult[] {
-  return [];
-}
 
 // ---------------------------------------------------------------------------
 // Constrói indicadores — FIIs usam dados do scraper, ações usam brapi
@@ -376,7 +373,6 @@ function buildIndicators(
   stockScraped?: StockIndicators | null,
 ): AssetIndicator[] {
   const rawVolume = firstNumber(brapi.regularMarketVolume);
-  // regularMarketVolume = número de cotas negociadas → multiplica pelo preço para obter valor financeiro
   const liquidity =
     kind === "fii"
       ? scraped?.liquidezDiaria ?? (rawVolume != null && price ? rawVolume * price : rawVolume)
@@ -395,22 +391,21 @@ function buildIndicators(
     ];
   }
 
-  // Ações/BDRs/cripto — combina brapi (P/L, P/VP, DY) com stockScraped (ROE, ROIC, margens, etc.)
+  // Ações/BDRs/cripto — combina brapi com stockScraped
   const pct = (v: number | null) => (v != null && Math.abs(v) <= 1 ? v * 100 : v);
-
   const pe  = firstNumber(stockScraped?.pl,  brapi.priceEarnings);
   const pvp = firstNumber(stockScraped?.pvp, brapi.priceToBook);
   const dy  = firstNumber(stockScraped?.dividendYield, brapi.dividendYield);
 
   return [
-    { key: "pe",         label: "P/L",                   value: pe,                                   unit: "number"  },
-    { key: "pvp",        label: "P/VP",                  value: pvp,                                  unit: "number"  },
-    { key: "roe",        label: "ROE",                   value: stockScraped?.roe  ?? null,            unit: "percent" },
-    { key: "roic",       label: "ROIC",                  value: stockScraped?.roic ?? null,            unit: "percent" },
-    { key: "evEbitda",   label: "EV/EBITDA",             value: stockScraped?.evEbitda ?? null,        unit: "number"  },
-    { key: "dy",         label: "Dividend Yield",         value: pct(dy),                              unit: "percent" },
-    { key: "margin",     label: "Margem Líquida",         value: stockScraped?.margemLiquida ?? null,  unit: "percent" },
-    { key: "debtEbitda", label: "Dívida Líquida/EBITDA", value: stockScraped?.dividaEbitda ?? null,    unit: "number"  },
+    { key: "pe",         label: "P/L",                   value: pe,                                  unit: "number"  },
+    { key: "pvp",        label: "P/VP",                  value: pvp,                                 unit: "number"  },
+    { key: "roe",        label: "ROE",                   value: stockScraped?.roe       ?? null,      unit: "percent" },
+    { key: "roic",       label: "ROIC",                  value: stockScraped?.roic      ?? null,      unit: "percent" },
+    { key: "evEbitda",   label: "EV/EBITDA",             value: stockScraped?.evEbitda  ?? null,      unit: "number"  },
+    { key: "dy",         label: "Dividend Yield",        value: pct(dy),                             unit: "percent" },
+    { key: "margin",     label: "Margem Líquida",        value: stockScraped?.margemLiquida ?? null,  unit: "percent" },
+    { key: "debtEbitda", label: "Dívida Líquida/EBITDA", value: stockScraped?.dividaEbitda ?? null,   unit: "number"  },
   ];
 }
 
@@ -569,7 +564,7 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
     yahooChart(yahooSymbolFor(ticker, kind), range),
     // Scraping só para FIIs e ETFs
     (kind === "fii" || kind === "etf") ? fetchFiiIndicators(ticker) : Promise.resolve(null),
-    // Scraping para ações, BDRs, ETFs de ações
+    // Scraping para ações, BDRs, US stocks
     (kind === "stock" || kind === "bdr" || kind === "us_stock") ? fetchStockIndicators(ticker) : Promise.resolve(null),
   ]);
 
@@ -608,16 +603,14 @@ export async function fetchAssetAnalysis(tickerRaw: string, range = "1y"): Promi
   // CORREÇÃO 1: scraper tem prioridade sobre brapi para setor/segmento
  const sector  = firstString(
   fiiScraped?.setor,
-  fiiScraped?.segmento,
-  fiiScraped?.tipo,
-  stockScraped?.sector,
+  fiiScraped?.segmento,   // brapi retorna aqui
+  fiiScraped?.tipo,       // fallback: "Tijolo", "Papel", etc.
   brapiFirst?.sector,
 ) ?? null;
 
 const segment = firstString(
   fiiScraped?.segmento,
   fiiScraped?.setor,
-  stockScraped?.segment,
   brapiFirst?.industry,
 ) ?? null;
 console.log("FII VPC:", fiiScraped?.valorPatrimonialCota, "PVP:", fiiScraped?.pvp);
@@ -633,20 +626,12 @@ console.log("FII VPC:", fiiScraped?.valorPatrimonialCota, "PVP:", fiiScraped?.pv
   // ── 7. Dividendos ─────────────────────────────────────────────────────
   let dividends: AssetDividend[] = [];
 
-  // Para FIIs: Status Invest tem data com + pagamento corretos
-  if (kind === "fii" || kind === "etf") {
-    const siDividends = await scrapeFiiDividends(ticker);
-    if (siDividends.length > 0) {
-      dividends = siDividends.map((d) => ({
-        date: d.date,
-        paymentDate: d.paymentDate,
-        amount: d.amount,
-        label: d.label,
-      }));
-    }
+  // FIIs: usa dividendsHistory do scraper (tem data com + pagamento)
+  if ((kind === "fii" || kind === "etf") && fiiScraped?.dividendsHistory?.length) {
+    dividends = fiiScraped.dividendsHistory;
   }
 
-  // Fallback: Yahoo Finance (sem paymentDate, cobre stocks e quando SI falha)
+  // Fallback: Yahoo Finance
   if (dividends.length === 0 && yahooChartData?.events?.dividends) {
     dividends = parseYahooDividends(yahooChartData);
   }
@@ -672,11 +657,16 @@ console.log("FII VPC:", fiiScraped?.valorPatrimonialCota, "PVP:", fiiScraped?.pv
     price && price > 0 && dividend12m > 0 ? (dividend12m / price) * 100 : null;
 
   // ── 9. Indicadores, score, análise ────────────────────────────────────
-  const indicators    = buildIndicators(kind, brapiFirst ?? {}, fiiScraped, price, stockScraped);
- const annualResults = (kind === "fii" || kind === "etf")
-  ? annualFromDividends(dividends)
-  : annualFromYahoo();
-  const atlasScore    = calculateScore(kind, indicators, annualResults, dividendYield12m);
+  const indicators = buildIndicators(kind, brapiFirst ?? {}, fiiScraped, price, stockScraped);
+
+  // Resultados anuais: FIIs usam dividendos, ações buscam do StatusInvest
+  const annualResults: AssetAnnualResult[] = (kind === "fii" || kind === "etf")
+    ? annualFromDividends(dividends)
+    : await fetchStockAnnualResults(ticker).then((rows) =>
+        rows.map((r) => ({ year: r.year, revenue: r.revenue, profit: r.profit, equity: r.equity }))
+      ).catch(() => []);
+
+  const atlasScore = calculateScore(kind, indicators, annualResults, dividendYield12m);
 
   // ── 10. Logo ──────────────────────────────────────────────────────────
   const logoUrl = firstString(

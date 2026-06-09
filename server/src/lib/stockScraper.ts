@@ -324,3 +324,71 @@ export async function fetchStockIndicators(ticker: string): Promise<StockIndicat
   return setCached(ticker, result);
 }
 
+// ---------------------------------------------------------------------------
+// Resultados anuais — scraping do StatusInvest
+// ---------------------------------------------------------------------------
+export type StockAnnualResult = {
+  year: string;
+  revenue: number | null;
+  profit: number | null;
+  equity: number | null;
+};
+
+export async function fetchStockAnnualResults(ticker: string): Promise<StockAnnualResult[]> {
+  // StatusInvest expõe os resultados anuais via endpoint JSON
+  const urls = [
+    `https://statusinvest.com.br/acao/getindicatorscharttype?ticker=${ticker.toUpperCase()}&chartType=1&chartAnnual=true`,
+    `https://statusinvest.com.br/acoes/getindicatorscharttype?ticker=${ticker.toUpperCase()}&chartType=1&chartAnnual=true`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+          "Referer": `https://statusinvest.com.br/acoes/${ticker.toLowerCase()}`,
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "pt-BR,pt;q=0.9",
+        },
+      });
+      if (!res.ok) continue;
+      const json = await res.json() as unknown;
+
+      // StatusInvest retorna objeto com chaves por indicador
+      if (!json || typeof json !== "object") continue;
+      const data = json as Record<string, { value?: { year?: string; av?: number }[] }>;
+
+      const receita = data["receita_liquida"]?.value ?? data["revenue"]?.value ?? [];
+      const lucro   = data["lucro_liquido"]?.value   ?? data["net_income"]?.value ?? [];
+      const pl      = data["patrimonio_liquido"]?.value ?? data["equity"]?.value ?? [];
+
+      if (receita.length === 0 && lucro.length === 0) continue;
+
+      // Indexa por ano
+      const byYear = new Map<string, StockAnnualResult>();
+      const toEntry = (arr: { year?: string; av?: number }[], field: keyof StockAnnualResult) => {
+        for (const item of arr) {
+          if (!item.year) continue;
+          const y = String(item.year);
+          if (!byYear.has(y)) byYear.set(y, { year: y, revenue: null, profit: null, equity: null });
+          const entry = byYear.get(y)!;
+          (entry as Record<string, unknown>)[field] = item.av ?? null;
+        }
+      };
+      toEntry(receita, "revenue");
+      toEntry(lucro,   "profit");
+      toEntry(pl,      "equity");
+
+      const results = [...byYear.values()]
+        .sort((a, b) => a.year.localeCompare(b.year))
+        .slice(-7); // últimos 7 anos
+
+      console.log(`[stockScraper] annualResults ${ticker}: ${results.length} anos`);
+      return results;
+    } catch (err) {
+      console.error(`[stockScraper] fetchStockAnnualResults ${ticker} ERROR:`, err);
+    }
+  }
+  return [];
+}
+
