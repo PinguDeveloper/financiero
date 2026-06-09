@@ -274,6 +274,32 @@ export function AssetAnalysisClient({ asset }: { asset: AssetAnalysis }) {
                 <p className="mt-1 text-xs text-slate-500">Quando o valor é creditado</p>
               </div>
             </div>
+
+            {asset.dividends.length > 0 && (
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full min-w-[400px] text-sm">
+                  <thead>
+                    <tr className="border-b border-surface-border text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="pb-2 pr-4">Tipo</th>
+                      <th className="pb-2 pr-4">Data com</th>
+                      <th className="pb-2 pr-4">Pagamento</th>
+                      <th className="pb-2 text-right">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-border">
+                    {asset.dividends.slice(0, 12).map((d, i) => (
+                      <tr key={i} className="text-slate-300">
+                        <td className="py-2.5 pr-4 font-medium text-white">{d.label || "Dividendo"}</td>
+                        <td className="py-2.5 pr-4 tabular-nums">{formatDateBR(d.date)}</td>
+                        <td className="py-2.5 pr-4 tabular-nums text-income">{formatDateBR(d.paymentDate)}</td>
+                        <td className="py-2.5 text-right tabular-nums font-semibold text-white">{formatBRL(d.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div className="mt-5 h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dividendBars}>
