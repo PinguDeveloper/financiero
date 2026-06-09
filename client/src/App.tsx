@@ -86,11 +86,11 @@ function FinanceShell() {
     const id = window.setInterval(() => void refreshMe(), 30_000);
     return () => clearInterval(id);
   }, [subscription?.status, subscription?.hasAccess, refreshMe]);
+
   const {
     transactions,
     addTransaction,
     removeTransaction,
-    summary,
     categories,
     installmentPlans,
     addInstallmentPlan,
@@ -223,21 +223,7 @@ function FinanceShell() {
                 <section className="space-y-5">
                   <div>
                     <h2 className="font-display text-sm font-semibold uppercase tracking-widest text-slate-500">
-                      Totais gerais
-                    </h2>
-                    <p className="mt-1 text-xs text-slate-600">Todos os meses com lançamentos</p>
-                  </div>
-                  <StatCards
-                    income={summary.income}
-                    expense={summary.expense}
-                    balance={summary.balance}
-                  />
-                </section>
-
-                <section className="space-y-5">
-                  <div>
-                    <h2 className="font-display text-sm font-semibold uppercase tracking-widest text-slate-500">
-                      No mês selecionado
+                      Resumo do mês
                     </h2>
                     <p className="mt-1 text-xs text-slate-600">{formatMonthLabel(effectiveMonth)}</p>
                   </div>
@@ -330,3 +316,4 @@ function FinanceShell() {
     </div>
   );
 }
+
