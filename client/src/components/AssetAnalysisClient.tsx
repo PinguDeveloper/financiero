@@ -20,19 +20,25 @@ import { chartTooltipDark } from "../lib/chartTooltips";
 
 function formatMetric(indicator: AssetIndicator): string {
   if (indicator.value == null) return "—";
-  if (indicator.unit === "currency") return formatBRL(indicator.value);
+  if (indicator.unit === "currency") return compactCurrency(indicator.value);
   if (indicator.unit === "percent") return formatPct(indicator.value);
   return indicator.value.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 }
 
 function compactCurrency(value: number | null) {
   if (value == null) return "—";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 2,
-  }).format(value);
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000_000) return `${sign}R$ ${(abs / 1_000_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}B`;
+  if (abs >= 1_000_000) return `${sign}R$ ${(abs / 1_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`;
+  if (abs >= 1_000) return `${sign}R$ ${(abs / 1_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}K`;
+  return formatBRL(value);
+}
+
+function formatDateBR(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
 }
 
 function monthlyDividends(asset: AssetAnalysis) {
@@ -254,8 +260,18 @@ export function AssetAnalysisClient({ asset }: { asset: AssetAnalysis }) {
                 <p className="mt-1 text-2xl font-bold text-income">{asset.dividendYield12m != null ? formatPct(asset.dividendYield12m) : "—"}</p>
               </div>
               <div className="rounded-lg bg-surface p-4">
-                <p className="text-xs text-slate-500">Último pagamento</p>
+                <p className="text-xs text-slate-500">Último provento</p>
                 <p className="mt-1 text-2xl font-bold text-white">{asset.lastDividend ? formatBRL(asset.lastDividend.amount) : "—"}</p>
+              </div>
+              <div className="rounded-lg bg-surface p-4">
+                <p className="text-xs text-slate-500">Data com</p>
+                <p className="mt-1 text-lg font-bold text-white">{formatDateBR(asset.lastDividend?.date)}</p>
+                <p className="mt-1 text-xs text-slate-500">Último prazo para ter direito</p>
+              </div>
+              <div className="rounded-lg bg-surface p-4">
+                <p className="text-xs text-slate-500">Data de pagamento</p>
+                <p className="mt-1 text-lg font-bold text-income">{formatDateBR(asset.lastDividend?.paymentDate)}</p>
+                <p className="mt-1 text-xs text-slate-500">Quando o valor é creditado</p>
               </div>
             </div>
             <div className="mt-5 h-64">
@@ -361,3 +377,4 @@ export function AssetAnalysisClient({ asset }: { asset: AssetAnalysis }) {
     </div>
   );
 }
+
