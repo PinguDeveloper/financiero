@@ -684,3 +684,61 @@ export async function fetchFiiIndicators(ticker: string): Promise<FiiIndicators>
   return setCached(ticker, result);
 }
 
+
+// ---------------------------------------------------------------------------
+// Scraping de dividendos com data com + pagamento do Status Invest
+// ---------------------------------------------------------------------------
+export type FiiDividend = {
+  date: string;        // data com (ISO)
+  paymentDate: string | null; // data de pagamento (ISO)
+  amount: number;
+  label: string;
+};
+
+function parseStatusInvestDate(str: string): string | null {
+  if (!str) return null;
+  // formato DD/MM/YYYY
+  const m = str.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  // já ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str.trim())) return str.trim();
+  return null;
+}
+
+export async function scrapeFiiDividends(ticker: string): Promise<FiiDividend[]> {
+  try {
+    // Status Invest expõe os proventos via endpoint JSON
+    const url = `https://statusinvest.com.br/fii/companytickerprovents?ticker=${ticker.toUpperCase()}&chartProventsType=2`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+        "Referer": `https://statusinvest.com.br/fundos-imobiliarios/${ticker.toLowerCase()}`,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+      },
+    });
+    if (!res.ok) return [];
+    const json = await res.json() as unknown;
+    if (!Array.isArray(json)) return [];
+
+    return (json as Record<string, unknown>[])
+      .map((row) => {
+        const dataCom = parseStatusInvestDate(String(row.ed ?? row.dataCom ?? row.date ?? ""));
+        const pagamento = parseStatusInvestDate(String(row.pd ?? row.paymentDate ?? row.dataPagamento ?? ""));
+        const amount = Number(row.v ?? row.value ?? row.amount ?? 0);
+        if (!dataCom || amount <= 0) return null;
+        return {
+          date: dataCom,
+          paymentDate: pagamento,
+          amount,
+          label: String(row.etd ?? row.label ?? row.type ?? "Dividendo"),
+        } satisfies FiiDividend;
+      })
+      .filter((d): d is FiiDividend => d !== null)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  } catch (err) {
+    console.error(`[fiiScraper] scrapeFiiDividends ${ticker} ERROR:`, err);
+    return [];
+  }
+}
+

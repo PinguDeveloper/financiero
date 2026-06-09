@@ -1,4 +1,4 @@
-import { fetchFiiIndicators, type FiiIndicators } from "./fiiScraper.js";
+import { fetchFiiIndicators, scrapeFiiDividends, type FiiIndicators } from "./fiiScraper.js";
 import { fetchStockIndicators, type StockIndicators } from "./stockScraper.js";
 
 export type AssetKind =
@@ -633,7 +633,21 @@ console.log("FII VPC:", fiiScraped?.valorPatrimonialCota, "PVP:", fiiScraped?.pv
   // ── 7. Dividendos ─────────────────────────────────────────────────────
   let dividends: AssetDividend[] = [];
 
-  if (yahooChartData?.events?.dividends) {
+  // Para FIIs: Status Invest tem data com + pagamento corretos
+  if (kind === "fii" || kind === "etf") {
+    const siDividends = await scrapeFiiDividends(ticker);
+    if (siDividends.length > 0) {
+      dividends = siDividends.map((d) => ({
+        date: d.date,
+        paymentDate: d.paymentDate,
+        amount: d.amount,
+        label: d.label,
+      }));
+    }
+  }
+
+  // Fallback: Yahoo Finance (sem paymentDate, cobre stocks e quando SI falha)
+  if (dividends.length === 0 && yahooChartData?.events?.dividends) {
     dividends = parseYahooDividends(yahooChartData);
   }
 
