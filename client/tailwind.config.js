@@ -9,25 +9,25 @@ export default {
       },
       colors: {
         surface: {
-          DEFAULT: "#0f1419",
-          raised: "#161d26",
-          border: "#243040",
+          DEFAULT: "#ffffff",
+          raised: "#f8f9fb",
+          border: "#e2e8f0",
         },
         accent: {
-          DEFAULT: "#3d8bfd",
-          muted: "#2a5fad",
+          DEFAULT: "#2563eb",
+          muted: "#93c5fd",
         },
-        income: "#34d399",
-        expense: "#f87171",
+        income: "#059669",
+        expense: "#dc2626",
       },
       keyframes: {
         "fade-in": {
-          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "0%": { opacity: "0", transform: "translateY(8px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
         skeleton: {
-          "0%, 100%": { opacity: "0.45" },
-          "50%": { opacity: "0.9" },
+          "0%, 100%": { opacity: "0.35" },
+          "50%": { opacity: "0.7" },
         },
         shimmer: {
           "0%": { backgroundPosition: "200% 0" },
@@ -43,3 +43,4 @@ export default {
   },
   plugins: [],
 };
+

@@ -136,37 +136,40 @@ function FinanceShell() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
       <AppTopBar />
+
       {showPaywall ? (
         <SubscriptionPaywall subscription={subscription} onRefresh={refreshMe} />
       ) : null}
+
       {subscription?.status === "trial" && subscription.minutesLeft != null && subscription.hasAccess ? (
-        <p className="mb-6 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
+        <p className="mb-6 rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-accent">
           Teste gratuito: {subscription.minutesLeft} min restante
           {subscription.minutesLeft === 1 ? "" : "s"}.
         </p>
       ) : null}
+
       <header className="flex flex-col gap-8 border-b border-surface-border pb-10 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex-1">
           <p className="text-sm font-medium uppercase tracking-widest text-accent">
             Painel pessoal
           </p>
-          <h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          <h1 className="mt-1 font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
             Controle financeiro
           </h1>
-          <p className="mt-2 max-w-xl text-slate-400">
+          <p className="mt-2 max-w-xl text-slate-500">
             Organize entradas, saídas, parcelas e investimentos em um só lugar.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end">
           {tab === "dashboard" && (
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
                 Mês de análise
               </label>
               <select
                 value={effectiveMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="min-w-[200px] rounded-xl border border-surface-border bg-surface-raised px-4 py-3 text-white outline-none ring-accent/30 transition hover:border-slate-500 focus:ring-2"
+                className="min-w-[200px] rounded-xl border border-surface-border bg-white px-4 py-3 text-slate-800 outline-none ring-accent/20 transition hover:border-slate-300 focus:ring-2"
               >
                 {months.map((ym) => (
                   <option key={ym} value={ym}>
@@ -180,7 +183,7 @@ function FinanceShell() {
       </header>
 
       {error && (
-        <p className="mt-6 rounded-xl border border-expense/30 bg-expense/10 px-4 py-3 text-sm text-expense">
+        <p className="mt-6 rounded-xl border border-expense/20 bg-expense/5 px-4 py-3 text-sm text-expense">
           {error}
         </p>
       )}
@@ -196,8 +199,8 @@ function FinanceShell() {
             onClick={() => selectTab(id)}
             className={`shrink-0 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
               tab === id
-                ? "bg-accent text-white shadow-lg shadow-accent/25"
-                : "border border-surface-border bg-surface-raised text-slate-400 hover:border-slate-500 hover:text-white"
+                ? "bg-accent text-white shadow-md shadow-accent/20"
+                : "border border-surface-border bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800"
             }`}
           >
             {TAB_LABEL[id]}
@@ -218,99 +221,99 @@ function FinanceShell() {
               transition={{ duration: 0.25 }}
               className="flex flex-col gap-12 lg:gap-14"
             >
-            {tab === "dashboard" && (
-              <>
-                <section className="space-y-5">
-                  <div>
-                    <h2 className="font-display text-sm font-semibold uppercase tracking-widest text-slate-500">
-                      Resumo do mês
-                    </h2>
-                    <p className="mt-1 text-xs text-slate-600">{formatMonthLabel(effectiveMonth)}</p>
-                  </div>
-                  <StatCards
-                    income={monthSummary.income}
-                    expense={monthSummary.expense}
-                    balance={monthSummary.balance}
-                    highlightBalance
+              {tab === "dashboard" && (
+                <>
+                  <section className="space-y-5">
+                    <div>
+                      <h2 className="font-display text-sm font-semibold uppercase tracking-widest text-slate-400">
+                        Resumo do mês
+                      </h2>
+                      <p className="mt-1 text-xs text-slate-400">{formatMonthLabel(effectiveMonth)}</p>
+                    </div>
+                    <StatCards
+                      income={monthSummary.income}
+                      expense={monthSummary.expense}
+                      balance={monthSummary.balance}
+                      highlightBalance
+                    />
+                  </section>
+
+                  <DashboardInsights
+                    transactions={transactions}
+                    investmentEntries={investmentEntries}
+                    effectiveMonth={effectiveMonth}
+                    monthSummary={monthSummary}
                   />
-                </section>
 
-                <DashboardInsights
-                  transactions={transactions}
-                  investmentEntries={investmentEntries}
-                  effectiveMonth={effectiveMonth}
-                  monthSummary={monthSummary}
-                />
+                  <MotionSection delay={0.05}>
+                    <SavingsBoxesPanel
+                      boxes={savingsBoxes}
+                      onAdd={addSavingsBox}
+                      onDeposit={depositSavingsBox}
+                      onRemove={removeSavingsBox}
+                    />
+                  </MotionSection>
 
-                <MotionSection delay={0.05}>
-                  <SavingsBoxesPanel
-                    boxes={savingsBoxes}
-                    onAdd={addSavingsBox}
-                    onDeposit={depositSavingsBox}
-                    onRemove={removeSavingsBox}
-                  />
-                </MotionSection>
+                  <AddTransactionForm categories={categories} onAdd={addTransaction} />
 
-                <AddTransactionForm categories={categories} onAdd={addTransaction} />
-
-                <ChartsSection
-                  filtered={filtered}
-                  investmentEntries={investmentEntries}
-                  selectedMonth={effectiveMonth}
-                />
-
-                <DashboardExtendedCharts
-                  transactions={transactions}
-                  investmentEntries={investmentEntries}
-                />
-
-                <div className="max-w-3xl">
-                  <IncomeByCategoryMini
+                  <ChartsSection
                     filtered={filtered}
                     investmentEntries={investmentEntries}
                     selectedMonth={effectiveMonth}
                   />
-                </div>
 
-                <TransactionTable rows={filtered} onRemove={removeTransaction} />
-              </>
-            )}
+                  <DashboardExtendedCharts
+                    transactions={transactions}
+                    investmentEntries={investmentEntries}
+                  />
 
-            {tab === "parcelas" && (
-              <InstallmentsPanel
-                categories={categories.expense}
-                plans={installmentPlans}
-                onCreate={addInstallmentPlan}
-                onRemovePlan={removeInstallmentPlan}
-                onPay={payInstallment}
-              />
-            )}
+                  <div className="max-w-3xl">
+                    <IncomeByCategoryMini
+                      filtered={filtered}
+                      investmentEntries={investmentEntries}
+                      selectedMonth={effectiveMonth}
+                    />
+                  </div>
 
-            {tab === "investimentos" && (
-              <InvestmentsPanel
-                entries={investmentEntries}
-                summary={investmentSummary}
-                onAdd={addInvestment}
-                onRemove={removeInvestment}
-                onSyncProventos={syncProventos}
-              />
-            )}
+                  <TransactionTable rows={filtered} onRemove={removeTransaction} />
+                </>
+              )}
 
-            {tab === "ativos" && <AssetsTabPanel investmentEntries={investmentEntries} />}
+              {tab === "parcelas" && (
+                <InstallmentsPanel
+                  categories={categories.expense}
+                  plans={installmentPlans}
+                  onCreate={addInstallmentPlan}
+                  onRemovePlan={removeInstallmentPlan}
+                  onPay={payInstallment}
+                />
+              )}
 
-            {tab === "assinatura" && (
-              <SubscriptionPanel
-                subscription={subscription}
-                email={user.email}
-                onRefresh={refreshMe}
-              />
-            )}
+              {tab === "investimentos" && (
+                <InvestmentsPanel
+                  entries={investmentEntries}
+                  summary={investmentSummary}
+                  onAdd={addInvestment}
+                  onRemove={removeInvestment}
+                  onSyncProventos={syncProventos}
+                />
+              )}
+
+              {tab === "ativos" && <AssetsTabPanel investmentEntries={investmentEntries} />}
+
+              {tab === "assinatura" && (
+                <SubscriptionPanel
+                  subscription={subscription}
+                  email={user.email}
+                  onRefresh={refreshMe}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         )}
       </main>
 
-      <footer className="mt-20 border-t border-surface-border pt-8 text-center text-xs text-slate-600">
+      <footer className="mt-20 border-t border-surface-border pt-8 text-center text-xs text-slate-400">
         Controle financeiro
       </footer>
     </div>

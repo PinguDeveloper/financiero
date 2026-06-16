@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-  @apply bg-surface text-slate-100 min-h-screen;
+  @apply bg-white text-slate-800 min-h-screen;
 }
 
 @layer base {
@@ -17,11 +17,11 @@ body {
 }
 
 @layer components {
-  /** Cartões: hover suave e leve elevação (use junto com bordas existentes). */
   .card-interactive {
     @apply transition-all duration-300 ease-out motion-reduce:transition-none;
   }
   .card-interactive:hover {
-    @apply -translate-y-0.5 border-slate-500/40 shadow-xl shadow-black/20 motion-reduce:transform-none;
+    @apply -translate-y-0.5 border-slate-300 shadow-md shadow-slate-100 motion-reduce:transform-none;
   }
 }
+
