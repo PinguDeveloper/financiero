@@ -12,3 +12,5 @@ client/dist
 client/.next
 client/out
 server/static-app
+
+/generated/prisma
