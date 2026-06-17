@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "prisma generate && tsc && node scripts/copy-client-out.mjs",
+    "build": "node scripts/ensure-prisma-client.mjs && prisma generate && tsc && node scripts/copy-client-out.mjs",
+    "build:api": "node scripts/ensure-prisma-client.mjs && prisma generate && tsc",
+    "build:railway": "node scripts/ensure-prisma-client.mjs && prisma generate && tsc",
     "start": "node dist/index.js",
     "db:push": "prisma db push",
-    "build:railway": "prisma generate && tsc",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:studio": "prisma studio"

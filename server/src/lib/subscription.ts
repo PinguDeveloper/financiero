@@ -1,4 +1,4 @@
-import type { User } from "@prisma/client";
+import type { User } from "../generated/prisma/client.js";
 
 export type SubscriptionStatus = "trial" | "active" | "expired";
 

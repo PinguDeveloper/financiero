@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm install --include=dev && npm run build:api && npm run db:migrate -w server"
+
+[deploy]
+startCommand = "npm run start -w server"
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
